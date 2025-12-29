@@ -63,7 +63,7 @@ This will install ViSP into `~/visp_install`.
 
 ---
 
-## 🚀 Building CHRPS Visual Servo
+## 🚀 Build the Application
 
 ```bash
 git clone https://github.com/ulubilgeulusoy/FR3_visual_servo_examples.git
@@ -76,7 +76,7 @@ make -j$(nproc)
 
 ---
 
-## ▶️ Running
+## ▶️ Run the Application
 
 Example run (FR3 connected at `172.16.0.2`):
 
@@ -98,7 +98,7 @@ Example run (FR3 connected at `172.16.0.2`):
 
 ---
 
-## Simple Build and Run (alternative)
+## Simple Build and Run Application (alternative)
 
 ./run_visual_servo_CHRPS.sh
 
