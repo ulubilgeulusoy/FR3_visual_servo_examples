@@ -41,4 +41,4 @@
 *.dwo
 
 # Ignore the build folder when updating github since every user should set the build folder their own
-build/ 
+/build/
