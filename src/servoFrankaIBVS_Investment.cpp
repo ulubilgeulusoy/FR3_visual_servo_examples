@@ -145,6 +145,10 @@ int main(int argc, char **argv)
   double max_angular = vpMath::rad(20);
 
   double lost_start_ms = -1.0;             // timestamp when we first lost the tag
+  const std::vector<int> target_sequence = {1, 2, 1}; // follow IDs in order: 1 -> 2 -> 1 -> loop
+  size_t target_seq_idx = 0;
+  double target_phase_start_ms = vpTime::measureTimeMs();
+  const double target_phase_duration_ms = 5000.0; // 5 seconds per target
   
 
   // ---- Last-seen tag info for biased recovery ----
@@ -355,7 +359,7 @@ int main(int argc, char **argv)
   detector.setAprilTagPoseEstimationMethod(poseEstimationMethod);
   detector.setDisplayTag(display_tag);
   detector.setAprilTagQuadDecimate(opt_quad_decimate);
-  detector.setZAlignedWithCameraAxis(opt_tag_z_aligned);z
+  detector.setZAlignedWithCameraAxis(opt_tag_z_aligned);
 
   // Setup camera extrinsics
   vpPoseVector e_P_c;
@@ -454,6 +458,14 @@ int main(int argc, char **argv)
 
     while (!has_converged && !final_quit) {
       double t_start = vpTime::measureTimeMs();
+      double now_phase = t_start;
+
+      // Switch target every target_phase_duration_ms following the sequence 1 -> 2 -> 1 -> ...
+      if (now_phase - target_phase_start_ms >= target_phase_duration_ms) {
+        target_seq_idx = (target_seq_idx + 1) % target_sequence.size();
+        target_phase_start_ms = now_phase;
+      }
+      const int target_tag_id = target_sequence[target_seq_idx];
 
       rs.acquire(I);
 
@@ -461,19 +473,32 @@ int main(int argc, char **argv)
 
       std::vector<vpHomogeneousMatrix> c_M_o_vec;
       bool ret = detector.detect(I, opt_tag_size, cam, c_M_o_vec);
+      int target_idx = -1;
+      if (ret) {
+        const std::vector<int> tags_id = detector.getTagsId();
+        for (size_t i = 0; i < tags_id.size() && i < c_M_o_vec.size(); ++i) {
+          if (tags_id[i] == target_tag_id) {
+            target_idx = static_cast<int>(i);
+            break;
+          }
+        }
+      }
 
       {
         std::stringstream ss;
         ss << "Left click to " << (send_velocities ? "stop the robot" : "servo the robot") << ", right click to quit.";
         vpDisplay::displayText(I, 20, 20, ss.str(), vpColor::red);
+        std::stringstream ss_target;
+        ss_target << "Targeting Apriltag id " << target_tag_id << " (36h11)";
+        vpDisplay::displayText(I, 40, 20, ss_target.str(), vpColor::red);
       }
 
       vpColVector v_c(6);
 
       // Only one tag is detected
-      if (ret && (c_M_o_vec.size() == 1)) {
+      if (ret && target_idx >= 0) {
         no_tag_counter = 0; // reset
-        c_M_o = c_M_o_vec[0];
+        c_M_o = c_M_o_vec[static_cast<size_t>(target_idx)];
         lost_start_ms = -1.0; // <--- add this line
 
 
@@ -507,7 +532,7 @@ int main(int argc, char **argv)
         }
 
         // Get tag corners
-        std::vector<vpImagePoint> corners = detector.getPolygon(0);
+        std::vector<vpImagePoint> corners = detector.getPolygon(static_cast<size_t>(target_idx));
 
         // --- Update last-seen centroid/size history for biased recovery ---
         {
@@ -667,6 +692,9 @@ int main(int argc, char **argv)
           vpDisplay::displayText(I, 60, 20,
             (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..." : "No tag: decaying biased turn...",
             vpColor::yellow);
+          std::stringstream ss_tag;
+          ss_tag << "Looking for Apriltag id " << target_tag_id << " (36h11)";
+          vpDisplay::displayText(I, 80, 20, ss_tag.str(), vpColor::orange);
 
         }
 

@@ -3,6 +3,8 @@
 Visual servoing application for the Franka Research 3 (FR3) robot using ViSP and an Intel RealSense camera.  
 This project extends ViSP’s `servoFrankaIBVS` example with configurable tag size, adjustable desired distance, and lost-target recovery behavior when the AprilTag is not visible.
 
+In this current experimental version the robot arm follows April Tag ID 1 for 5 seconds and then follows ID 2 for 5 seconds and stays in this loop of following IDs 1 and 2. I'll build a version that robot arm will goes to each desired ID locations. 
+
 ## Lost-target recovery
 
 When the AprilTag is lost, the controller uses the
