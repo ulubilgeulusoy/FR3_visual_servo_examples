@@ -63,7 +63,7 @@ This will install ViSP into `~/visp_install`.
 
 ---
 
-## 🚀 Build the Application
+## 🚀 Build Application
 
 ```bash
 git clone https://github.com/ulubilgeulusoy/FR3_visual_servo_examples.git
@@ -76,7 +76,7 @@ make -j$(nproc)
 
 ---
 
-## ▶️ Run the Application
+## ▶️ Run Application
 
 Example run (FR3 connected at `172.16.0.2`):
 
