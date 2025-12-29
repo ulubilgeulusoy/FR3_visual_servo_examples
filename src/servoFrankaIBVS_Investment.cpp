@@ -355,7 +355,7 @@ int main(int argc, char **argv)
   detector.setAprilTagPoseEstimationMethod(poseEstimationMethod);
   detector.setDisplayTag(display_tag);
   detector.setAprilTagQuadDecimate(opt_quad_decimate);
-  detector.setZAlignedWithCameraAxis(opt_tag_z_aligned);
+  detector.setZAlignedWithCameraAxis(opt_tag_z_aligned);z
 
   // Setup camera extrinsics
   vpPoseVector e_P_c;
