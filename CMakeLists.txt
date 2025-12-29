@@ -9,5 +9,5 @@ find_package(VISP REQUIRED)
 
 include_directories(${VISP_INCLUDE_DIRS})
 
-add_executable(servoFrankaIBVS_CHRPS src/servoFrankaIBVS_CHRPS.cpp)
-target_link_libraries(servoFrankaIBVS_CHRPS ${VISP_LIBRARIES})
+add_executable(servoFrankaIBVS_Investment src/servoFrankaIBVS_Investment.cpp)
+target_link_libraries(servoFrankaIBVS_Investment ${VISP_LIBRARIES})
