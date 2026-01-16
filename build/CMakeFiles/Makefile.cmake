@@ -7,7 +7,7 @@ set(CMAKE_DEPENDS_GENERATOR "Unix Makefiles")
 # The top level Makefile was generated from the following files:
 set(CMAKE_MAKEFILE_DEPENDS
   "CMakeCache.txt"
-  "/home/parc/chrps_visual_servo/CMakeLists.txt"
+  "/home/parc/FR3_visual_servo_examples/CMakeLists.txt"
   "CMakeFiles/3.31.0/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.31.0/CMakeSystem.cmake"
   "/home/parc/visp_install/lib/cmake/visp/VISPConfig-version.cmake"

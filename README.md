@@ -3,6 +3,10 @@
 Visual servoing application for the Franka Research 3 (FR3) robot using ViSP and an Intel RealSense camera.  
 This project extends ViSP’s `servoFrankaIBVS` example with configurable tag size, adjustable desired distance, and lost-target recovery behavior when the AprilTag is not visible.
 
+## Camera Calibration and Beginner Example
+
+Before doing anything with this visual servoing example, follow the instructions from this GitHub Repo: https://github.com/yiherngang/Franka-Research-3-with-ROS-2-Imvia-lab/tree/main?tab=readme-ov-file#70-visual-servoing-with-franka-research-3 and make sure you perform the camera calibration correctly, and the provided visual servoing example works with your robot arm.
+
 ## Lost-target recovery
 
 When the AprilTag is lost, the controller uses the
@@ -33,6 +37,15 @@ double bias_boost = 1.4;
 double max_angular = vpMath::rad(30);
 double bias_window_secs = 3.5;
 double scan_backoff_secs = 3.5;
+```
+
+## Safety features (CHRPS)
+
+- **Servo speed caps**: Translational and rotational camera-frame velocities are clamped (`servo_max_linear`, `servo_max_angular`) to keep approach slow.
+- **Orientation guard**: If the current-to-desired tag orientation error exceeds ±95°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
+- **Velocity smoothing**: A first-order low-pass filter (`vel_smooth_alpha`) blends new commands with the previous ones to reduce twitchiness while keeping the caps/guard in place.
+
+Tune these in `src/servoFrankaIBVS_CHRPS.cpp` as needed for your setup.
 
 
 ## 📦 Dependencies
@@ -124,4 +137,3 @@ chrps_visual_servo/
 - If no tag is detected, the robot moves back briefly to try to reacquire it.
 
 ---
-

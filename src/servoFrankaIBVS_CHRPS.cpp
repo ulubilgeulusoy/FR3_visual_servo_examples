@@ -144,6 +144,13 @@ int main(int argc, char **argv)
   double max_linear = 0.05;                // safety caps
   double max_angular = vpMath::rad(20);
 
+  // --- Safety caps applied during normal servoing (tag detected) ---
+  double servo_max_linear = 0.02;          // m/s cap for translation
+  double servo_max_angular = vpMath::rad(8); // rad/s cap for rotation
+  double orientation_stop_thresh = vpMath::rad(95); // deg -> rad; stop if orientation error exceeds this
+
+  double vel_smooth_alpha = 0.3;           // 0..1; higher = less smoothing
+
   double lost_start_ms = -1.0;             // timestamp when we first lost the tag
   
 
@@ -451,6 +458,7 @@ int main(int argc, char **argv)
     robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
 
     vpHomogeneousMatrix cd_M_c, c_M_o, o_M_o;
+    vpColVector v_c_filtered(6); // holds low-pass filtered velocity
 
     while (!has_converged && !final_quit) {
       double t_start = vpTime::measureTimeMs();
@@ -550,6 +558,28 @@ int main(int argc, char **argv)
         }
         else {
           v_c = task.computeControlLaw();
+        }
+
+        // Safety cap on commanded velocities during normal servoing
+        for (size_t i = 0; i < 3; ++i) {
+          v_c[i] = std::max(-servo_max_linear, std::min(servo_max_linear, v_c[i]));
+        }
+        for (size_t i = 3; i < 6; ++i) {
+          v_c[i] = std::max(-servo_max_angular, std::min(servo_max_angular, v_c[i]));
+        }
+
+        // Orientation guard: hold still if rotation error to desired pose exceeds threshold
+        {
+          vpHomogeneousMatrix cd_M_c_current = cd_M_o * o_M_o * c_M_o.inverse();
+          double theta_err = cd_M_c_current.getRotationMatrix().getThetaUVector().getTheta();
+          double theta_err_deg = vpMath::deg(theta_err); // always positive; use as absolute rotation error
+          if (theta_err_deg > vpMath::deg(orientation_stop_thresh)) {
+            v_c = 0;
+            vpDisplay::displayText(I, 80, 20, "Orientation |error| >95 deg: holding position", vpColor::orange);
+            if (opt_verbose) {
+              std::cout << "Orientation error " << theta_err_deg << " deg exceeds threshold; velocities zeroed\n";
+            }
+          }
         }
 
         // Display the current and desired feature points in the image display
@@ -675,6 +705,15 @@ int main(int argc, char **argv)
 
       if (!send_velocities) {
         v_c = 0;
+        v_c_filtered = 0;
+      }
+      else {
+        // Low-pass filter to smooth commanded velocities
+        for (unsigned int i = 0; i < v_c.size(); ++i) {
+          double prev = v_c_filtered[i];
+          v_c_filtered[i] = vel_smooth_alpha * v_c[i] + (1.0 - vel_smooth_alpha) * prev;
+        }
+        v_c = v_c_filtered;
       }
 
       // Send to the robot
