@@ -5,6 +5,10 @@ This project extends ViSP’s `servoFrankaIBVS` example with configurable tag si
 
 In this current experimental version the robot arm follows April Tag ID 1 for 5 seconds and then follows ID 2 for 5 seconds and stays in this loop of following IDs 1 and 2. I'll build a version that robot arm will goes to each desired ID locations. 
 
+## Camera Calibration and Example
+
+Follow the instructions from this GitHub Repo: https://github.com/yiherngang/Franka-Research-3-with-ROS-2-Imvia-lab/tree/main?tab=readme-ov-file#70-visual-servoing-with-franka-research-3
+
 ## Lost-target recovery
 
 When the AprilTag is lost, the controller uses the
