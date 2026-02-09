@@ -79,6 +79,7 @@
 #include <algorithm>   // min, max
 #include <tuple>       // tuple, tie, make_tuple
 #include <deque>       // deque for short trajectory window
+#include <vector>
 
 
 
@@ -118,6 +119,7 @@ int main(int argc, char **argv)
 {
   double opt_tag_size = 0.05; //default tag size was originally 0.12
   double opt_desired_factor = 9.0; // default multiplier (new line added by Ulu 8/28/2025)
+  int opt_mode = 1;               // 1: single-tag (CHRPS), 2: sequenced multi-tag (Investment)
   bool opt_tag_z_aligned = false;
   std::string opt_robot_ip = "192.168.1.1";
   std::string opt_eMc_filename = "";
@@ -158,6 +160,11 @@ int main(int argc, char **argv)
   double vel_smooth_alpha = 0.3;           // 0..1; higher = less smoothing
 
   double lost_start_ms = -1.0;             // timestamp when we first lost the tag
+  // Mode 2 (Investment-style) sequencing between multiple tag IDs
+  std::vector<int> target_sequence = {1, 2, 1};
+  size_t target_seq_idx = 0;
+  double target_phase_start_ms = vpTime::measureTimeMs();
+  const double target_phase_duration_ms = 5000.0; // 5 seconds per target
   
 
   // ---- Last-seen tag info for biased recovery ----
@@ -215,6 +222,13 @@ int main(int argc, char **argv)
     else if (std::string(argv[i]) == "--plot") {
       opt_plot = true;
     }
+    else if ((std::string(argv[i]) == "--mode") && (i + 1 < argc)) {
+      opt_mode = std::stoi(argv[++i]);
+      if (opt_mode != 1 && opt_mode != 2) {
+        std::cerr << "Invalid mode " << opt_mode << ". Supported: 1 (single), 2 (sequence). Defaulting to 1." << std::endl;
+        opt_mode = 1;
+      }
+    }
     else if (std::string(argv[i]) == "--adaptive-gain") {
       opt_adaptive_gain = true;
     }
@@ -234,6 +248,7 @@ int main(int argc, char **argv)
         << " [--tag-quad-decimate <decimation factor>]"
         << " [--tag-z-aligned]"
         << " [--eMc <extrinsic transformation file>]"
+        << " [--mode <1|2>]"
         << " [--adaptive-gain]"
         << " [--plot]"
         << " [--task-sequencing]"
@@ -271,6 +286,9 @@ int main(int argc, char **argv)
         << "  --tag-quad-decimate <decimation factor>" << std::endl
         << "    Decimation factor used during Apriltag detection." << std::endl
         << "    Default: " << opt_quad_decimate << std::endl
+        << std::endl
+        << "  --mode <1|2>" << std::endl
+        << "    1: single-tag CHRPS (default). 2: multi-tag sequence (Investment style)." << std::endl
         << std::endl
         << "  --adaptive-gain" << std::endl
         << "    Flag to enable adaptive gain to speed up visual servo near convergence." << std::endl
@@ -468,6 +486,16 @@ int main(int argc, char **argv)
 
     while (!has_converged && !final_quit) {
       double t_start = vpTime::measureTimeMs();
+      // Mode 2: cycle target IDs every phase duration
+      int target_tag_id = -1;
+      if (opt_mode == 2) {
+        double now_phase = t_start;
+        if (now_phase - target_phase_start_ms >= target_phase_duration_ms) {
+          target_seq_idx = (target_seq_idx + 1) % target_sequence.size();
+          target_phase_start_ms = now_phase;
+        }
+        target_tag_id = target_sequence[target_seq_idx];
+      }
 
       rs.acquire(I);
 
@@ -475,19 +503,47 @@ int main(int argc, char **argv)
 
       std::vector<vpHomogeneousMatrix> c_M_o_vec;
       bool ret = detector.detect(I, opt_tag_size, cam, c_M_o_vec);
+      int target_idx = -1;
+      if (ret && opt_mode == 2) {
+        const std::vector<int> tags_id = detector.getTagsId();
+        for (size_t i = 0; i < tags_id.size() && i < c_M_o_vec.size(); ++i) {
+          if (tags_id[i] == target_tag_id) {
+            target_idx = static_cast<int>(i);
+            break;
+          }
+        }
+      }
 
       {
         std::stringstream ss;
         ss << "Left click to " << (send_velocities ? "stop the robot" : "servo the robot") << ", right click to quit.";
         vpDisplay::displayText(I, 20, 20, ss.str(), vpColor::red);
+        if (opt_mode == 2 && target_tag_id >= 0) {
+          std::stringstream ss_target;
+          ss_target << "Targeting Apriltag id " << target_tag_id << " (36h11)";
+          vpDisplay::displayText(I, 40, 20, ss_target.str(), vpColor::red);
+        }
       }
 
       vpColVector v_c(6);
 
-      // Only one tag is detected
-      if (ret && (c_M_o_vec.size() == 1)) {
+      // Tag selection depends on mode:
+      // - Mode 1: expect exactly one tag (CHRPS behavior)
+      // - Mode 2: pick current target id from sequence
+      bool tag_ok = false;
+      size_t use_idx = 0;
+      if (opt_mode == 1 && ret && c_M_o_vec.size() == 1) {
+        tag_ok = true;
+        use_idx = 0;
+      }
+      else if (opt_mode == 2 && ret && target_idx >= 0) {
+        tag_ok = true;
+        use_idx = static_cast<size_t>(target_idx);
+      }
+
+      if (tag_ok) {
         no_tag_counter = 0; // reset
-        c_M_o = c_M_o_vec[0];
+        c_M_o = c_M_o_vec[use_idx];
         lost_start_ms = -1.0; // <--- add this line
 
 
@@ -521,7 +577,7 @@ int main(int argc, char **argv)
         }
 
         // Get tag corners
-        std::vector<vpImagePoint> corners = detector.getPolygon(0);
+        std::vector<vpImagePoint> corners = detector.getPolygon(use_idx);
 
         // --- Update last-seen centroid/size history for biased recovery ---
         {
@@ -704,6 +760,11 @@ int main(int argc, char **argv)
           vpDisplay::displayText(I, 60, 20,
             (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..." : "No tag: decaying biased turn...",
             vpColor::yellow);
+          if (opt_mode == 2 && target_tag_id >= 0) {
+            std::stringstream ss_tag;
+            ss_tag << "Looking for Apriltag id " << target_tag_id << " (36h11)";
+            vpDisplay::displayText(I, 80, 20, ss_tag.str(), vpColor::orange);
+          }
 
         }
 

@@ -76,7 +76,7 @@ This will install ViSP into `~/visp_install`.
 
 ---
 
-## 🚀 Building CHRPS Visual Servo
+## 🚀 Building (CHRPS + Combined)
 
 ```bash
 git clone https://github.com/ulubilgeulusoy/FR3_visual_servo_examples.git
@@ -85,11 +85,14 @@ mkdir build && cd build
 
 cmake .. -DCMAKE_BUILD_TYPE=Release -DViSP_DIR=~/visp_install/lib/cmake/visp
 make -j$(nproc)
+
+# Or build just the combined binary
+make servoFrankaIBVS_combined
 ```
 
 ---
 
-## ▶️ Running
+## ▶️ Running (CHRPS)
 
 Example run (FR3 connected at `172.16.0.2`):
 
@@ -114,6 +117,28 @@ Example run (FR3 connected at `172.16.0.2`):
 ## Simple Build and Run (alternative)
 
 ./run_visual_servo_CHRPS.sh
+
+## ▶️ Combined App (mode switch)
+
+Binary: `servoFrankaIBVS_combined` (also wrapped by `run_visual_servo_combined.sh`)
+
+Modes:
+- `--mode 1` (default): single-tag CHRPS behavior — expects exactly one detected tag; keeps CHRPS safety features (velocity caps, orientation guard, low-pass smoothing) and rolling 2 s corner trajectories.
+- `--mode 2`: multi-tag sequence like the Investment variant — cycles AprilTag IDs `{1,2,1,...}` every 5 s; only servos to the current target ID; displays the active target and lost-target overlays. Safety caps and smoothing remain enabled.
+
+Example:
+```bash
+# mode 1 (single tag, default)
+./servoFrankaIBVS_combined --eMc config/eMc.yaml --ip 172.16.0.2 --mode 1
+
+# mode 2 (tag ID sequence)
+./servoFrankaIBVS_combined --eMc config/eMc.yaml --ip 172.16.0.2 --mode 2
+```
+
+Helper script (builds then runs combined):
+```bash
+MODE=2 ./run_visual_servo_combined.sh   # set MODE=1 or 2
+```
 
 ## 📂 Project Structure
 
