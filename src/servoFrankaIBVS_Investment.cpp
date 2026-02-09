@@ -78,7 +78,6 @@
 #include <cmath>       // sin, exp, M_PI
 #include <algorithm>   // min, max
 #include <tuple>       // tuple, tie, make_tuple
-#include <deque>       // deque for short trajectory window
 
 
 
@@ -89,27 +88,22 @@ using namespace VISP_NAMESPACE_NAME;
 #endif
 
 void display_point_trajectory(const vpImage<unsigned char> &I, const std::vector<vpImagePoint> &vip,
-                              std::vector<std::deque<std::pair<double, vpImagePoint>>> &traj_vip,
-                              double now_ms, double window_ms)
+                              std::vector<vpImagePoint> *traj_vip)
 {
   for (size_t i = 0; i < vip.size(); ++i) {
-    if (!traj_vip[i].empty()) {
+    if (traj_vip[i].size()) {
       // Add the point only if distance with the previous > 1 pixel
-      if (vpImagePoint::distance(vip[i], traj_vip[i].back().second) > 1.) {
-        traj_vip[i].push_back({now_ms, vip[i]});
+      if (vpImagePoint::distance(vip[i], traj_vip[i].back()) > 1.) {
+        traj_vip[i].push_back(vip[i]);
       }
     }
     else {
-      traj_vip[i].push_back({now_ms, vip[i]});
-    }
-    // Keep only last window_ms worth of points
-    while (!traj_vip[i].empty() && (now_ms - traj_vip[i].front().first) > window_ms) {
-      traj_vip[i].pop_front();
+      traj_vip[i].push_back(vip[i]);
     }
   }
   for (size_t i = 0; i < vip.size(); ++i) {
     for (size_t j = 1; j < traj_vip[i].size(); j++) {
-      vpDisplay::displayLine(I, traj_vip[i][j - 1].second, traj_vip[i][j].second, vpColor::green, 2);
+      vpDisplay::displayLine(I, traj_vip[i][j - 1], traj_vip[i][j], vpColor::green, 2);
     }
   }
 }
@@ -150,21 +144,17 @@ int main(int argc, char **argv)
   double max_linear = 0.05;                // safety caps
   double max_angular = vpMath::rad(20);
 
-  // --- Safety caps applied during normal servoing (tag detected) ---
-  double servo_max_linear = 0.02;          // m/s cap for translation
-  double servo_max_angular = vpMath::rad(8); // rad/s cap for rotation
-  double orientation_stop_thresh = vpMath::rad(45); // deg -> rad; stop if orientation error exceeds this
-
-  double vel_smooth_alpha = 0.3;           // 0..1; higher = less smoothing
-
   double lost_start_ms = -1.0;             // timestamp when we first lost the tag
+  const std::vector<int> target_sequence = {1, 2, 1}; // follow IDs in order: 1 -> 2 -> 1 -> loop
+  size_t target_seq_idx = 0;
+  double target_phase_start_ms = vpTime::measureTimeMs();
+  const double target_phase_duration_ms = 5000.0; // 5 seconds per target
   
 
   // ---- Last-seen tag info for biased recovery ----
   bool have_last = false;        // do we have a previous measurement?
   double t_prev = 0.0, u_prev = 0.0, v_prev = 0.0, s_prev = 0.0;
   double t_last = 0.0, u_last = 0.0, v_last = 0.0, s_last = 0.0;  // most recent
-  std::vector<std::deque<std::pair<double, vpImagePoint>>> traj_corners; // rolling window trajectory
 
   // helper: compute centroid & “size” (px)
   auto compute_centroid_and_size = [](const std::vector<vpImagePoint>& poly){
@@ -457,6 +447,7 @@ int main(int argc, char **argv)
     bool has_converged = false;
     bool send_velocities = false;
     bool servo_started = false;
+    std::vector<vpImagePoint> *traj_corners = nullptr; // To memorize point trajectory
 
     static double t_init_servo = vpTime::measureTimeMs();
 
@@ -464,10 +455,17 @@ int main(int argc, char **argv)
     robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
 
     vpHomogeneousMatrix cd_M_c, c_M_o, o_M_o;
-    vpColVector v_c_filtered(6); // holds low-pass filtered velocity
 
     while (!has_converged && !final_quit) {
       double t_start = vpTime::measureTimeMs();
+      double now_phase = t_start;
+
+      // Switch target every target_phase_duration_ms following the sequence 1 -> 2 -> 1 -> ...
+      if (now_phase - target_phase_start_ms >= target_phase_duration_ms) {
+        target_seq_idx = (target_seq_idx + 1) % target_sequence.size();
+        target_phase_start_ms = now_phase;
+      }
+      const int target_tag_id = target_sequence[target_seq_idx];
 
       rs.acquire(I);
 
@@ -475,19 +473,32 @@ int main(int argc, char **argv)
 
       std::vector<vpHomogeneousMatrix> c_M_o_vec;
       bool ret = detector.detect(I, opt_tag_size, cam, c_M_o_vec);
+      int target_idx = -1;
+      if (ret) {
+        const std::vector<int> tags_id = detector.getTagsId();
+        for (size_t i = 0; i < tags_id.size() && i < c_M_o_vec.size(); ++i) {
+          if (tags_id[i] == target_tag_id) {
+            target_idx = static_cast<int>(i);
+            break;
+          }
+        }
+      }
 
       {
         std::stringstream ss;
         ss << "Left click to " << (send_velocities ? "stop the robot" : "servo the robot") << ", right click to quit.";
         vpDisplay::displayText(I, 20, 20, ss.str(), vpColor::red);
+        std::stringstream ss_target;
+        ss_target << "Targeting Apriltag id " << target_tag_id << " (36h11)";
+        vpDisplay::displayText(I, 40, 20, ss_target.str(), vpColor::red);
       }
 
       vpColVector v_c(6);
 
       // Only one tag is detected
-      if (ret && (c_M_o_vec.size() == 1)) {
+      if (ret && target_idx >= 0) {
         no_tag_counter = 0; // reset
-        c_M_o = c_M_o_vec[0];
+        c_M_o = c_M_o_vec[static_cast<size_t>(target_idx)];
         lost_start_ms = -1.0; // <--- add this line
 
 
@@ -521,7 +532,7 @@ int main(int argc, char **argv)
         }
 
         // Get tag corners
-        std::vector<vpImagePoint> corners = detector.getPolygon(0);
+        std::vector<vpImagePoint> corners = detector.getPolygon(static_cast<size_t>(target_idx));
 
         // --- Update last-seen centroid/size history for biased recovery ---
         {
@@ -566,28 +577,6 @@ int main(int argc, char **argv)
           v_c = task.computeControlLaw();
         }
 
-        // Safety cap on commanded velocities during normal servoing
-        for (size_t i = 0; i < 3; ++i) {
-          v_c[i] = std::max(-servo_max_linear, std::min(servo_max_linear, v_c[i]));
-        }
-        for (size_t i = 3; i < 6; ++i) {
-          v_c[i] = std::max(-servo_max_angular, std::min(servo_max_angular, v_c[i]));
-        }
-
-        // Orientation guard: hold still if rotation error to desired pose exceeds threshold
-        {
-          vpHomogeneousMatrix cd_M_c_current = cd_M_o * o_M_o * c_M_o.inverse();
-          double theta_err = cd_M_c_current.getRotationMatrix().getThetaUVector().getTheta();
-          double theta_err_deg = vpMath::deg(theta_err); // always positive; use as absolute rotation error
-          if (theta_err_deg > vpMath::deg(orientation_stop_thresh)) {
-            v_c = 0;
-            vpDisplay::displayText(I, 80, 20, "Orientation |error| >95 deg: holding position", vpColor::orange);
-            if (opt_verbose) {
-              std::cout << "Orientation error " << theta_err_deg << " deg exceeds threshold; velocities zeroed\n";
-            }
-          }
-        }
-
         // Display the current and desired feature points in the image display
         vpServoDisplay::display(task, cam, I);
         for (size_t i = 0; i < corners.size(); ++i) {
@@ -601,11 +590,10 @@ int main(int argc, char **argv)
           vpDisplay::displayText(I, ip + vpImagePoint(15, 15), ss.str(), vpColor::red);
         }
         if (first_time) {
-          traj_corners.resize(corners.size());
+          traj_corners = new std::vector<vpImagePoint>[corners.size()];
         }
-        // Display the trajectory of the points used as features (last 2 seconds)
-        double now_ms = vpTime::measureTimeMs();
-        display_point_trajectory(I, corners, traj_corners, now_ms, 2000.0);
+        // Display the trajectory of the points used as features
+        display_point_trajectory(I, corners, traj_corners);
 
         if (opt_plot) {
           plotter->plot(0, iter_plot, task.getError());
@@ -704,6 +692,9 @@ int main(int argc, char **argv)
           vpDisplay::displayText(I, 60, 20,
             (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..." : "No tag: decaying biased turn...",
             vpColor::yellow);
+          std::stringstream ss_tag;
+          ss_tag << "Looking for Apriltag id " << target_tag_id << " (36h11)";
+          vpDisplay::displayText(I, 80, 20, ss_tag.str(), vpColor::orange);
 
         }
 
@@ -712,15 +703,6 @@ int main(int argc, char **argv)
 
       if (!send_velocities) {
         v_c = 0;
-        v_c_filtered = 0;
-      }
-      else {
-        // Low-pass filter to smooth commanded velocities
-        for (unsigned int i = 0; i < v_c.size(); ++i) {
-          double prev = v_c_filtered[i];
-          v_c_filtered[i] = vel_smooth_alpha * v_c[i] + (1.0 - vel_smooth_alpha) * prev;
-        }
-        v_c = v_c_filtered;
       }
 
       // Send to the robot
@@ -772,6 +754,9 @@ int main(int argc, char **argv)
 
         vpDisplay::flush(I);
       }
+    }
+    if (traj_corners) {
+      delete[] traj_corners;
     }
   }
   catch (const vpException &e) {

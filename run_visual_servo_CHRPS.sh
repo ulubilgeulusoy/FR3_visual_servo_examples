@@ -23,4 +23,4 @@ make -j"$(nproc)"
   --adaptive-gain \
   --plot \
   --tag-size 0.05 \
-  --desired-factor 9
+  --desired-factor 7
