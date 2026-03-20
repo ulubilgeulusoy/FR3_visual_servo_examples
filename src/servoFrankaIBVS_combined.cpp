@@ -121,7 +121,7 @@ int main(int argc, char **argv)
   double opt_tag_size = 0.05; //default tag size was originally 0.12
   double opt_desired_factor = 9.0; // desired camera-to-tag distance factor
   const double desired_factor_step = 1.0;
-  const double desired_factor_min = 1.0;
+  const double desired_factor_min = 3.0;
   const double desired_factor_max = 20.0;
   const unsigned int touch_button_size = 44;
   const unsigned int touch_button_gap = 12;

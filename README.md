@@ -111,6 +111,7 @@ Example run (FR3 connected at `172.16.0.2`):
 - `--tag-size` sets the physical AprilTag size in meters (default `0.05 m`)
 - `--desired-factor` sets the desired camera distance as `tag_size * desired_factor`
   With `tag-size=0.05`, `desired-factor=7` means `0.35 m` or `35 cm`
+  Safety floor: the minimum allowed `desired-factor` is `3`
 - `--eMc` provides the camera-to-end-effector calibration file
 - `--adaptive-gain` improves convergence
 - `--mode` selects single-tag (`1`) or sequenced multi-tag (`2`) behavior
