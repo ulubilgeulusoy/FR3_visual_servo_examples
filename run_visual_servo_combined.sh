@@ -22,7 +22,6 @@ make -j"$(nproc)" servoFrankaIBVS_combined
   --ip 172.16.0.2 \
   --no-convergence-threshold \
   --adaptive-gain \
-  --plot \
   --tag-size 0.05 \
   --desired-factor 7 \
   --mode "$MODE"

@@ -59,14 +59,15 @@
 */
 
 #include <iostream>
+#include <iomanip>
 
 #include <visp3/core/vpConfig.h>
 #include <visp3/core/vpCameraParameters.h>
+#include <visp3/core/vpRect.h>
 #include <visp3/core/vpIoTools.h>
 #include <visp3/core/vpXmlParserCamera.h>
 #include <visp3/detection/vpDetectorAprilTag.h>
 #include <visp3/gui/vpDisplayFactory.h>
-#include <visp3/gui/vpPlot.h>
 #include <visp3/io/vpImageIo.h>
 #include <visp3/robot/vpRobotFranka.h>
 #include <visp3/sensor/vpRealSense2.h>
@@ -118,7 +119,17 @@ void display_point_trajectory(const vpImage<unsigned char> &I, const std::vector
 int main(int argc, char **argv)
 {
   double opt_tag_size = 0.05; //default tag size was originally 0.12
-  double opt_desired_factor = 9.0; // default multiplier (new line added by Ulu 8/28/2025)
+  double opt_desired_factor = 9.0; // desired camera-to-tag distance factor
+  const double desired_factor_step = 1.0;
+  const double desired_factor_min = 1.0;
+  const double desired_factor_max = 20.0;
+  const unsigned int touch_button_size = 44;
+  const unsigned int touch_button_gap = 12;
+  const int overlay_left = 20;
+  const int overlay_row_1 = 20;
+  const int overlay_row_2 = 42;
+  const int overlay_row_3 = 64;
+  const int overlay_bottom = 20;
   int opt_mode = 1;               // 1: single-tag (CHRPS), 2: sequenced multi-tag (Investment)
   bool opt_tag_z_aligned = false;
   std::string opt_robot_ip = "192.168.1.1";
@@ -128,7 +139,6 @@ int main(int argc, char **argv)
   bool display_tag = true;
   int opt_quad_decimate = 2;
   bool opt_verbose = false;
-  bool opt_plot = false;
   bool opt_adaptive_gain = false;
   bool opt_task_sequencing = false;
   double convergence_threshold = 0.00005;
@@ -189,7 +199,30 @@ int main(int argc, char **argv)
     return std::make_tuple(u, v, perim);
   };
 
+  auto clamp_desired_factor = [&]() {
+    opt_desired_factor = std::max(desired_factor_min, std::min(desired_factor_max, opt_desired_factor));
+  };
 
+  auto desired_factor_distance_cm = [&]() {
+    return 100.0 * opt_tag_size * opt_desired_factor;
+  };
+
+  auto adjust_desired_factor = [&](double delta) {
+    opt_desired_factor += delta;
+    clamp_desired_factor();
+  };
+
+  auto get_plus_button_rect = [&](const vpImage<unsigned char> &image) {
+    const int top = static_cast<int>(image.getHeight()) - static_cast<int>(touch_button_size) - 12;
+    const int left = static_cast<int>(image.getWidth()) - static_cast<int>(2 * touch_button_size + touch_button_gap + 12);
+    return vpRect(left, top, touch_button_size, touch_button_size);
+  };
+
+  auto get_minus_button_rect = [&](const vpImage<unsigned char> &image) {
+    vpRect plus_button = get_plus_button_rect(image);
+    return vpRect(plus_button.getLeft() + static_cast<int>(touch_button_size + touch_button_gap),
+                  plus_button.getTop(), touch_button_size, touch_button_size);
+  };
 
   for (int i = 1; i < argc; ++i) {
     if ((std::string(argv[i]) == "--tag-size") && (i + 1 < argc)) {
@@ -219,9 +252,6 @@ int main(int argc, char **argv)
     else if (std::string(argv[i]) == "--verbose") {
       opt_verbose = true;
     }
-    else if (std::string(argv[i]) == "--plot") {
-      opt_plot = true;
-    }
     else if ((std::string(argv[i]) == "--mode") && (i + 1 < argc)) {
       opt_mode = std::stoi(argv[++i]);
       if (opt_mode != 1 && opt_mode != 2) {
@@ -250,7 +280,6 @@ int main(int argc, char **argv)
         << " [--eMc <extrinsic transformation file>]"
         << " [--mode <1|2>]"
         << " [--adaptive-gain]"
-        << " [--plot]"
         << " [--task-sequencing]"
         << " [--no-convergence-threshold]"
         << " [--verbose]"
@@ -293,9 +322,6 @@ int main(int argc, char **argv)
         << "  --adaptive-gain" << std::endl
         << "    Flag to enable adaptive gain to speed up visual servo near convergence." << std::endl
         << std::endl
-        << "  --plot" << std::endl
-        << "    Flag to enable curve plotter." << std::endl
-        << std::endl
         << "  --task-sequencing" << std::endl
         << "    Flag to enable task sequencing scheme." << std::endl
         << std::endl
@@ -320,6 +346,8 @@ int main(int argc, char **argv)
     }
   }
   
+  clamp_desired_factor();
+
   vpRealSense2 rs;
   rs2::config config;
   unsigned int width = 640, height = 480;
@@ -410,7 +438,7 @@ int main(int argc, char **argv)
   std::cout << "e_M_c:\n" << e_M_c << std::endl;
 
   // Set desired pose used to compute the desired features
-  vpHomogeneousMatrix cd_M_o(vpTranslationVector(0, 0, opt_tag_size * opt_desired_factor), // desired factor (default 9) times tag with along camera z axis (originally it was 3 times of tag size with default tag size 12)
+  vpHomogeneousMatrix cd_M_o(vpTranslationVector(0, 0, opt_tag_size * opt_desired_factor),
                              vpRotationMatrix({ 1, 0, 0, 0, -1, 0, 0, 0, -1 }));
 
   vpRobotFranka robot;
@@ -427,6 +455,27 @@ int main(int argc, char **argv)
     point[1].setWorldCoordinates(+opt_tag_size / 2., -opt_tag_size / 2., 0);
     point[2].setWorldCoordinates(+opt_tag_size / 2., +opt_tag_size / 2., 0);
     point[3].setWorldCoordinates(-opt_tag_size / 2., +opt_tag_size / 2., 0);
+
+    vpHomogeneousMatrix cd_M_c, c_M_o, o_M_o;
+    bool desired_pose_initialized = false;
+    auto update_desired_pose = [&]() {
+      cd_M_o = vpHomogeneousMatrix(vpTranslationVector(0, 0, opt_tag_size * opt_desired_factor),
+                                   vpRotationMatrix({ 1, 0, 0, 0, -1, 0, 0, 0, -1 }));
+
+      if (!desired_pose_initialized) {
+        return;
+      }
+
+      for (size_t i = 0; i < point.size(); ++i) {
+        vpColVector c_P, p_img;
+        point[i].changeFrame(cd_M_o * o_M_o, c_P);
+        point[i].projection(c_P, p_img);
+
+        pd[i].set_x(p_img[0]);
+        pd[i].set_y(p_img[1]);
+        pd[i].set_Z(c_P[2]);
+      }
+    };
 
     // Setup IBVS
     vpServo task;
@@ -445,32 +494,6 @@ int main(int argc, char **argv)
       task.setLambda(0.5);
     }
 
-    vpPlot *plotter = nullptr;
-    int iter_plot = 0;
-
-    if (opt_plot) {
-      plotter = new vpPlot(2, static_cast<int>(250 * 2), 500, static_cast<int>(I.getWidth()) + 80, 10,
-                           "Real time curves plotter");
-      plotter->setTitle(0, "Visual features error");
-      plotter->setTitle(1, "Camera velocities");
-      plotter->initGraph(0, 8);
-      plotter->initGraph(1, 6);
-      plotter->setLegend(0, 0, "error_feat_p1_x");
-      plotter->setLegend(0, 1, "error_feat_p1_y");
-      plotter->setLegend(0, 2, "error_feat_p2_x");
-      plotter->setLegend(0, 3, "error_feat_p2_y");
-      plotter->setLegend(0, 4, "error_feat_p3_x");
-      plotter->setLegend(0, 5, "error_feat_p3_y");
-      plotter->setLegend(0, 6, "error_feat_p4_x");
-      plotter->setLegend(0, 7, "error_feat_p4_y");
-      plotter->setLegend(1, 0, "vc_x");
-      plotter->setLegend(1, 1, "vc_y");
-      plotter->setLegend(1, 2, "vc_z");
-      plotter->setLegend(1, 3, "wc_x");
-      plotter->setLegend(1, 4, "wc_y");
-      plotter->setLegend(1, 5, "wc_z");
-    }
-
     bool final_quit = false;
     bool has_converged = false;
     bool send_velocities = false;
@@ -481,7 +504,6 @@ int main(int argc, char **argv)
     robot.set_eMc(e_M_c); // Set location of the camera wrt end-effector frame
     robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
 
-    vpHomogeneousMatrix cd_M_c, c_M_o, o_M_o;
     vpColVector v_c_filtered(6); // holds low-pass filtered velocity
 
     while (!has_converged && !final_quit) {
@@ -517,11 +539,24 @@ int main(int argc, char **argv)
       {
         std::stringstream ss;
         ss << "Left click to " << (send_velocities ? "stop the robot" : "servo the robot") << ", right click to quit.";
-        vpDisplay::displayText(I, 20, 20, ss.str(), vpColor::red);
+        vpDisplay::displayText(I, overlay_row_1, overlay_left, ss.str(), vpColor::red);
+
+        std::stringstream ss_factor;
+        ss_factor << std::fixed << std::setprecision(1)
+                  << "Keys +/- or touch buttons: desired factor = " << opt_desired_factor
+                  << "  (distance " << desired_factor_distance_cm() << " cm)";
+        vpDisplay::displayText(I, overlay_row_2, overlay_left, ss_factor.str(), vpColor::red);
+
+        vpRect plus_button = get_plus_button_rect(I);
+        vpRect minus_button = get_minus_button_rect(I);
+        vpDisplay::displayRectangle(I, plus_button, vpColor::red, false, 2);
+        vpDisplay::displayRectangle(I, minus_button, vpColor::red, false, 2);
+        vpDisplay::displayText(I, static_cast<int>(plus_button.getTop()) + 29, static_cast<int>(plus_button.getLeft()) + 15, "+", vpColor::red);
+        vpDisplay::displayText(I, static_cast<int>(minus_button.getTop()) + 29, static_cast<int>(minus_button.getLeft()) + 16, "-", vpColor::red);
         if (opt_mode == 2 && target_tag_id >= 0) {
           std::stringstream ss_target;
           ss_target << "Targeting Apriltag id " << target_tag_id << " (36h11)";
-          vpDisplay::displayText(I, 40, 20, ss_target.str(), vpColor::red);
+          vpDisplay::displayText(I, overlay_row_3, overlay_left, ss_target.str(), vpColor::red);
         }
       }
 
@@ -548,8 +583,7 @@ int main(int argc, char **argv)
 
 
 
-        static bool first_time = true;
-        if (first_time) {
+        if (!desired_pose_initialized) {
           // Introduce security wrt tag positioning in order to avoid PI rotation
           std::vector<vpHomogeneousMatrix> secure_o_M_o(2), secure_cd_M_c(2);
           secure_o_M_o[1].buildFrom(0, 0, 0, 0, 0, M_PI);
@@ -564,16 +598,8 @@ int main(int argc, char **argv)
             o_M_o = secure_o_M_o[1]; // Introduce PI rotation
           }
 
-          // Compute the desired position of the features from the desired pose
-          for (size_t i = 0; i < point.size(); ++i) {
-            vpColVector c_P, p;
-            point[i].changeFrame(cd_M_o * o_M_o, c_P);
-            point[i].projection(c_P, p);
-
-            pd[i].set_x(p[0]);
-            pd[i].set_y(p[1]);
-            pd[i].set_Z(c_P[2]);
-          }
+          desired_pose_initialized = true;
+          update_desired_pose();
         }
 
         // Get tag corners
@@ -637,7 +663,7 @@ int main(int argc, char **argv)
           double theta_err_deg = vpMath::deg(theta_err); // always positive; use as absolute rotation error
           if (theta_err_deg > vpMath::deg(orientation_stop_thresh)) {
             v_c = 0;
-            vpDisplay::displayText(I, 80, 20, "Orientation |error| >95 deg: holding position", vpColor::orange);
+            vpDisplay::displayText(I, overlay_row_3, overlay_left, "Orientation |error| >95 deg: holding position", vpColor::orange);
             if (opt_verbose) {
               std::cout << "Orientation error " << theta_err_deg << " deg exceeds threshold; velocities zeroed\n";
             }
@@ -656,18 +682,12 @@ int main(int argc, char **argv)
           vpMeterPixelConversion::convertPoint(cam, pd[i].get_x(), pd[i].get_y(), ip);
           vpDisplay::displayText(I, ip + vpImagePoint(15, 15), ss.str(), vpColor::red);
         }
-        if (first_time) {
+        if (traj_corners.empty()) {
           traj_corners.resize(corners.size());
         }
         // Display the trajectory of the points used as features (last 2 seconds)
         double now_ms = vpTime::measureTimeMs();
         display_point_trajectory(I, corners, traj_corners, now_ms, 2000.0);
-
-        if (opt_plot) {
-          plotter->plot(0, iter_plot, task.getError());
-          plotter->plot(1, iter_plot, v_c);
-          iter_plot++;
-        }
 
         if (opt_verbose) {
           std::cout << "v_c: " << v_c.t() << std::endl;
@@ -676,7 +696,7 @@ int main(int argc, char **argv)
         double error = task.getError().sumSquare();
         std::stringstream ss;
         ss << "error: " << error;
-        vpDisplay::displayText(I, 20, static_cast<int>(I.getWidth()) - 150, ss.str(), vpColor::red);
+        vpDisplay::displayText(I, overlay_row_1, static_cast<int>(I.getWidth()) - 150, ss.str(), vpColor::red);
 
         if (opt_verbose)
           std::cout << "error: " << error << std::endl;
@@ -684,10 +704,7 @@ int main(int argc, char **argv)
         if (error < convergence_threshold) {
           has_converged = true;
           std::cout << "Servo task has converged" << std::endl;
-          vpDisplay::displayText(I, 100, 20, "Servo task has converged", vpColor::red);
-        }
-        if (first_time) {
-          first_time = false;
+          vpDisplay::displayText(I, overlay_row_3, overlay_left, "Servo task has converged", vpColor::red);
         }
       } // end if (c_M_o_vec.size() == 1)
       
@@ -757,13 +774,13 @@ int main(int argc, char **argv)
           v_c[0] = 0.0; v_c[1] = 0.0; v_c[2] = 0.0;
           v_c[3] = wx;  v_c[4] = wy;  v_c[5] = wz;
 
-          vpDisplay::displayText(I, 60, 20,
+          vpDisplay::displayText(I, overlay_row_3, overlay_left,
             (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..." : "No tag: decaying biased turn...",
             vpColor::yellow);
           if (opt_mode == 2 && target_tag_id >= 0) {
             std::stringstream ss_tag;
             ss_tag << "Looking for Apriltag id " << target_tag_id << " (36h11)";
-            vpDisplay::displayText(I, 80, 20, ss_tag.str(), vpColor::orange);
+            vpDisplay::displayText(I, overlay_row_3, overlay_left, ss_tag.str(), vpColor::orange);
           }
 
         }
@@ -790,15 +807,50 @@ int main(int argc, char **argv)
       {
         std::stringstream ss;
         ss << "Loop time: " << vpTime::measureTimeMs() - t_start << " ms";
-        vpDisplay::displayText(I, 40, 20, ss.str(), vpColor::red);
+        vpDisplay::displayText(I, static_cast<int>(I.getHeight()) - overlay_bottom, overlay_left, ss.str(), vpColor::red);
       }
       vpDisplay::flush(I);
 
+      std::string key;
+      if (vpDisplay::getKeyboardEvent(I, key, false)) {
+        bool desired_factor_changed = false;
+        if (key == "+" || key == "=") {
+          opt_desired_factor = std::min(desired_factor_max, opt_desired_factor + desired_factor_step);
+          desired_factor_changed = true;
+        }
+        else if (key == "-" || key == "_") {
+          opt_desired_factor = std::max(desired_factor_min, opt_desired_factor - desired_factor_step);
+          desired_factor_changed = true;
+        }
+
+        if (desired_factor_changed) {
+          update_desired_pose();
+          if (opt_verbose) {
+            std::cout << "Updated desired factor to " << opt_desired_factor
+                      << " (distance " << desired_factor_distance_cm() << " cm)" << std::endl;
+          }
+        }
+      }
+
+      vpImagePoint click_ip;
       vpMouseButton::vpMouseButtonType button;
-      if (vpDisplay::getClick(I, button, false)) {
+      if (vpDisplay::getClick(I, click_ip, button, false)) {
+        vpRect plus_button = get_plus_button_rect(I);
+        vpRect minus_button = get_minus_button_rect(I);
+
         switch (button) {
         case vpMouseButton::button1:
-          send_velocities = !send_velocities;
+          if (click_ip.inRectangle(plus_button)) {
+            adjust_desired_factor(desired_factor_step);
+            update_desired_pose();
+          }
+          else if (click_ip.inRectangle(minus_button)) {
+            adjust_desired_factor(-desired_factor_step);
+            update_desired_pose();
+          }
+          else {
+            send_velocities = !send_velocities;
+          }
           break;
 
         case vpMouseButton::button3:
@@ -813,11 +865,6 @@ int main(int argc, char **argv)
     }
     std::cout << "Stop the robot " << std::endl;
     robot.setRobotState(vpRobot::STATE_STOP);
-
-    if (opt_plot && plotter != nullptr) {
-      delete plotter;
-      plotter = nullptr;
-    }
 
     if (!final_quit) {
       while (!final_quit) {

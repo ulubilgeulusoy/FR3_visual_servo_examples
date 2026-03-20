@@ -23,7 +23,7 @@ When the AprilTag is lost, the controller uses the
 
 If the tag reappears, the timer resets and normal IBVS resumes.
 
-### Tuning knobs (in `servoFrankaIBVS_CHRPS.cpp`)
+### Tuning knobs (in `src/servoFrankaIBVS_combined.cpp`)
 - `k_ang` (px/s → rad/s gain) and optional `bias_boost` multiply how hard we turn.
 - `max_angular` caps angular speed.
 - `bias_window_secs` controls how long we keep the pure biased turn before decaying.
@@ -45,7 +45,7 @@ double scan_backoff_secs = 3.5;
 - **Orientation guard**: If the current-to-desired tag orientation error exceeds ±95°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
 - **Velocity smoothing**: A first-order low-pass filter (`vel_smooth_alpha`) blends new commands with the previous ones to reduce twitchiness while keeping the caps/guard in place.
 
-Tune these in `src/servoFrankaIBVS_CHRPS.cpp` as needed for your setup.
+Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.
 
 
 ## 📦 Dependencies
@@ -92,35 +92,38 @@ make servoFrankaIBVS_combined
 
 ---
 
-## ▶️ Running (CHRPS)
+## ▶️ Running The Combined App
+
+Binary: `servoFrankaIBVS_combined` (also wrapped by `run_visual_servo_combined.sh`)
 
 Example run (FR3 connected at `172.16.0.2`):
 
 ```bash
-./servoFrankaIBVS_CHRPS \
+./build/servoFrankaIBVS_combined \
   --eMc config/eMc.yaml \
   --ip 172.16.0.2 \
   --tag-size 0.05 \
-  --desired-factor 6 \
+  --desired-factor 7 \
   --adaptive-gain \
-  --plot
+  --mode 1
 ```
 
 - `--tag-size` sets the physical AprilTag size in meters (default `0.05 m`)
-- `--desired-factor` sets how many times the tag size is used to define desired Z distance (default `9`)
+- `--desired-factor` sets the desired camera distance as `tag_size * desired_factor`
+  With `tag-size=0.05`, `desired-factor=7` means `0.35 m` or `35 cm`
 - `--eMc` provides the camera-to-end-effector calibration file
 - `--adaptive-gain` improves convergence
-- `--plot` shows feature and velocity curves
+- `--mode` selects single-tag (`1`) or sequenced multi-tag (`2`) behavior
+
+While the camera window is open, you can adjust `desired-factor` live:
+- Keyboard: `+` / `-`
+- Touchscreen or mouse: tap the on-screen `+` and `-` buttons in the bottom-right corner
+
+The app now opens only the camera view window; the old graph popup has been removed.
 
 ---
 
-## Simple Build and Run (alternative)
-
-./run_visual_servo_CHRPS.sh
-
 ## ▶️ Combined App (mode switch)
-
-Binary: `servoFrankaIBVS_combined` (also wrapped by `run_visual_servo_combined.sh`)
 
 Modes:
 - `--mode 1` (default): single-tag CHRPS behavior — expects exactly one detected tag; keeps CHRPS safety features (velocity caps, orientation guard, low-pass smoothing) and rolling 2 s corner trajectories.
@@ -143,12 +146,10 @@ MODE=2 ./run_visual_servo_combined.sh   # set MODE=1 or 2
 ## 📂 Project Structure
 
 ```
-chrps_visual_servo/
-│
+FR3_visual_servo_examples/
 ├── src/
-│   └── servoFrankaIBVS_CHRPS.cpp    # main application
-├── config/
-│   └── eMc.yaml                     # sample extrinsic calibration file
+│   └── servoFrankaIBVS_combined.cpp
+├── run_visual_servo_combined.sh
 ├── CMakeLists.txt
 └── README.md
 ```
