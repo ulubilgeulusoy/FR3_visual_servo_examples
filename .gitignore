@@ -42,3 +42,5 @@
 
 # Build directory
 /build/
+
+.codex
