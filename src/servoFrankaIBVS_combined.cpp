@@ -476,6 +476,7 @@ int main(int argc, char **argv)
                              vpRotationMatrix({ 1, 0, 0, 0, -1, 0, 0, 0, -1 }));
 
   vpRobotFranka robot;
+  bool last_arm_moving_state = false;
 
   try {
     robot.connect(opt_robot_ip);
@@ -973,7 +974,6 @@ int main()
 #if !defined(VISP_HAVE_PUGIXML)
   std::cout << "Build ViSP with pugixml support enabled." << std::endl;
 #endif
-  update_arm_moving_state(false, last_arm_moving_state, true);
   return EXIT_SUCCESS;
 }
 #endif

@@ -47,6 +47,20 @@ double scan_backoff_secs = 3.5;
 
 Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.
 
+## Robot-State / LSL Integration
+
+`servoFrankaIBVS_combined.cpp` now publishes `arm_moving` directly to the local robot-state API used by the FR3 control / LSL tooling.
+
+Current behavior:
+- when visual servo is actively commanding a nontrivial Cartesian velocity, it posts `{"arm_moving": 1}` to `http://127.0.0.1:8765/state`
+- when commanded velocity drops to idle, it posts `{"arm_moving": 0}`
+- on clean app exit, it forces a final `arm_moving = 0` update
+
+This is intentionally controller-side rather than ROS-topic-side, since the ViSP/libfranka control path is the most reliable place to determine whether the robot is actually being commanded to move during visual servoing.
+
+Prerequisite:
+- the local state API (`robot_state_api.py` from the FR3 control GUI repo) must be running if you want these updates to appear in the `FR3_State` LSL stream
+
 
 ## 📦 Dependencies
 
@@ -95,6 +109,8 @@ make servoFrankaIBVS_combined
 ## ▶️ Running The Combined App
 
 Binary: `servoFrankaIBVS_combined` (also wrapped by `run_visual_servo_combined.sh`)
+
+If you want `arm_moving` to propagate into the FR3 LSL stream during visual servoing, make sure the local state API is already running on the same machine at `http://127.0.0.1:8765/state`.
 
 Example run (FR3 connected at `172.16.0.2`):
 
@@ -162,5 +178,6 @@ FR3_visual_servo_examples/
 - Default tag family is `36h11`.
 - The robot must be in **velocity control mode** and connected before running.
 - If no tag is detected, the robot moves back briefly to try to reacquire it.
+- Visual-servo `arm_moving` state is derived from the commanded ViSP camera-frame velocity, not from external ROS joint-state inference.
 
 ---
