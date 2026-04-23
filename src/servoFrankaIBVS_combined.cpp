@@ -81,6 +81,9 @@
 #include <tuple>       // tuple, tie, make_tuple
 #include <deque>       // deque for short trajectory window
 #include <vector>
+#include <cstdlib>
+#include <sstream>
+
 
 
 
@@ -89,6 +92,37 @@
 #ifdef ENABLE_VISP_NAMESPACE
 using namespace VISP_NAMESPACE_NAME;
 #endif
+
+namespace {
+constexpr double kArmMovingCommandThreshold = 1e-3;
+
+void post_state_update(const std::string &json_payload)
+{
+  std::ostringstream cmd;
+  cmd << "curl -s -X POST http://127.0.0.1:8765/state "
+      << "-H 'Content-Type: application/json' "
+      << "-d '" << json_payload << "' >/dev/null 2>&1";
+  std::system(cmd.str().c_str());
+}
+
+void update_arm_moving_state(bool moving, bool &last_state, bool force = false)
+{
+  if (!force && moving == last_state) {
+    return;
+  }
+  post_state_update(std::string("{\"arm_moving\":") + (moving ? "1" : "0") + "}");
+  last_state = moving;
+}
+
+double command_norm(const vpColVector &v)
+{
+  double sum = 0.0;
+  for (unsigned int i = 0; i < v.size(); ++i) {
+    sum += v[i] * v[i];
+  }
+  return std::sqrt(sum);
+}
+} // namespace
 
 void display_point_trajectory(const vpImage<unsigned char> &I, const std::vector<vpImagePoint> &vip,
                               std::vector<std::deque<std::pair<double, vpImagePoint>>> &traj_vip,
@@ -801,6 +835,9 @@ int main(int argc, char **argv)
         v_c = v_c_filtered;
       }
 
+      const bool arm_moving_commanded = send_velocities && (command_norm(v_c) > kArmMovingCommandThreshold);
+      update_arm_moving_state(arm_moving_commanded, last_arm_moving_state);
+
       // Send to the robot
       robot.setVelocity(vpRobot::CAMERA_FRAME, v_c);
 
@@ -921,6 +958,7 @@ int main(int argc, char **argv)
   }
 #endif
 
+  update_arm_moving_state(false, last_arm_moving_state, true);
   return EXIT_SUCCESS;
 }
 #else
@@ -935,6 +973,7 @@ int main()
 #if !defined(VISP_HAVE_PUGIXML)
   std::cout << "Build ViSP with pugixml support enabled." << std::endl;
 #endif
+  update_arm_moving_state(false, last_arm_moving_state, true);
   return EXIT_SUCCESS;
 }
 #endif
