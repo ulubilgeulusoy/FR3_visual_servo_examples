@@ -3,6 +3,66 @@
 Visual servoing application for the Franka Research 3 (FR3) robot using ViSP and an Intel RealSense camera.  
 This project extends ViSP’s `servoFrankaIBVS` example with configurable tag size, adjustable desired distance, and lost-target recovery behavior when the AprilTag is not visible.
 
+## User Guide
+
+This application moves the FR3 by visual servoing on an AprilTag seen by the RealSense camera. In normal operation, the camera detects the tag, estimates its pose, and commands Cartesian velocity so the robot approaches the desired viewing position while respecting the configured safety limits.
+
+Typical use flow:
+1. Complete camera calibration and verify the upstream beginner example works on your setup.
+2. Build this project and confirm you have a valid hand-eye calibration file such as `config/eMc.yaml`.
+3. Place a supported AprilTag in the camera view with a known physical size.
+4. Put the robot in the correct mode for velocity control and make sure the FR3 is reachable at the IP you will pass on the command line.
+5. Start the optional local robot-state API first if you want `arm_moving` updates forwarded to the LSL pipeline.
+6. Launch `servoFrankaIBVS_combined` with the calibration file, robot IP, tag size, and desired distance settings.
+7. Watch the camera window and verify the tag is detected before allowing the robot to continue moving toward the target pose.
+
+What you need before running:
+- A working FR3 + `libfranka` setup.
+- ViSP built with Franka and RealSense support.
+- An Intel RealSense camera mounted consistently with your calibration.
+- A printed AprilTag of known size.
+- The camera-to-end-effector calibration file passed through `--eMc`.
+
+How to run:
+- Build the project from the repo root:
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DViSP_DIR=~/visp_install/lib/cmake/visp
+make -j$(nproc)
+```
+- Start the application from the repo root with your robot IP:
+```bash
+./build/servoFrankaIBVS_combined \
+  --eMc config/eMc.yaml \
+  --ip 172.16.0.2 \
+  --tag-size 0.05 \
+  --desired-factor 7 \
+  --adaptive-gain \
+  --mode 1
+```
+
+What the main arguments do:
+- `--eMc`: path to the hand-eye calibration file.
+- `--ip`: FR3 IP address.
+- `--tag-size`: physical AprilTag size in meters.
+- `--desired-factor`: desired standoff distance, computed as `tag_size * desired_factor`.
+- `--adaptive-gain`: enables adaptive visual-servo gain for smoother convergence.
+- `--mode 1`: single-tag behavior.
+- `--mode 2`: sequenced multi-tag behavior.
+
+How to use the app while it is running:
+- Keep the target AprilTag visible in the camera window.
+- Use `+` and `-` on the keyboard to increase or decrease `desired-factor` live.
+- On a touchscreen or with a mouse, press the on-screen `+` and `-` buttons in the lower-right corner.
+- Watch for lost-target behavior: if the tag disappears, the robot briefly backs off and biases its search using the last observed image motion.
+- Stop the run immediately if detection is unstable, calibration looks wrong, or the robot motion does not match the camera image.
+
+Recommended operating practice:
+- Start with a conservative `desired-factor` and low-risk robot pose.
+- Make sure the tag is well lit and fully visible before engaging.
+- Keep people and obstacles clear of the robot path.
+- Verify tag size, calibration, and camera mounting whenever servo behavior looks inconsistent.
+
 ## Camera Calibration and Beginner Example
 
 Before doing anything with this visual servoing example, follow the instructions from this GitHub Repo: https://github.com/yiherngang/Franka-Research-3-with-ROS-2-Imvia-lab/tree/main?tab=readme-ov-file#70-visual-servoing-with-franka-research-3 and make sure you perform the camera calibration correctly, and the provided visual servoing example works with your robot arm.
@@ -39,7 +99,7 @@ double bias_window_secs = 3.5;
 double scan_backoff_secs = 3.5;
 ```
 
-## Safety features (CHRPS)
+## Safety features
 
 - **Servo speed caps**: Translational and rotational camera-frame velocities are clamped (`servo_max_linear`, `servo_max_angular`) to keep approach slow.
 - **Orientation guard**: If the current-to-desired tag orientation error exceeds ±95°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
