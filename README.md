@@ -36,7 +36,7 @@ make -j$(nproc)
   --eMc config/eMc.yaml \
   --ip 172.16.0.2 \
   --tag-size 0.05 \
-  --desired-factor 7 \
+  --desired-factor 8 \
   --adaptive-gain \
   --mode 1
 ```
@@ -53,7 +53,9 @@ What the main arguments do:
 How to use the app while it is running:
 - Keep the target AprilTag visible in the camera window.
 - Use `+` and `-` on the keyboard to increase or decrease `desired-factor` live.
-- On a touchscreen or with a mouse, press the on-screen `+` and `-` buttons in the lower-right corner.
+- On a touchscreen or with a mouse, press the on-screen `ZOOM OUT` and `ZOOM IN` buttons in the footer.
+- Use the on-screen `START` / `STOP` button to enable or halt robot motion.
+- Use the on-screen `QUIT` button in the upper-right corner to close the app.
 - Use `r` on the keyboard or press the on-screen `HOME` button in the lower-left corner to move the robot to the configured recovery pose.
 - Watch for lost-target behavior: if the tag disappears, the robot briefly backs off and biases its search using the last observed image motion.
 - Stop the run immediately if detection is unstable, calibration looks wrong, or the robot motion does not match the camera image.
@@ -110,6 +112,8 @@ double scan_backoff_secs = 3.5;
 - **Proximity stop**: While the tag is tracked, the app stops if the estimated camera-to-tag distance drops below a configured minimum threshold.
 - **Contact / collision / wrench guard**: The app monitors Franka-reported contact, collision, control-error, and external wrench estimates and disables commanded motion when any of them trips.
 - **Manual recovery pose**: The operator can command a predefined joint-space recovery pose from the GUI (`HOME`) or keyboard (`r`) after a safety stop or whenever a neutral pose is needed.
+- **Explicit motion enable**: Robot motion is enabled and disabled only through the dedicated footer control (`START` / `STOP`) rather than by clicking the camera image.
+- **Explicit quit control**: App exit is available only through the dedicated `QUIT` control in the upper-right corner.
 
 Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.
 
@@ -185,14 +189,14 @@ Example run (FR3 connected at `172.16.0.2`):
   --eMc config/eMc.yaml \
   --ip 172.16.0.2 \
   --tag-size 0.05 \
-  --desired-factor 7 \
+  --desired-factor 8 \
   --adaptive-gain \
   --mode 1
 ```
 
 - `--tag-size` sets the physical AprilTag size in meters (default `0.05 m`)
 - `--desired-factor` sets the desired camera distance as `tag_size * desired_factor`
-  With `tag-size=0.05`, `desired-factor=7` means `0.35 m` or `35 cm`
+  With `tag-size=0.05`, `desired-factor=8` means `0.40 m` or `40 cm`
   Safety floor: the minimum allowed `desired-factor` is `3`
 - `--eMc` provides the camera-to-end-effector calibration file
 - `--adaptive-gain` improves convergence
@@ -200,9 +204,12 @@ Example run (FR3 connected at `172.16.0.2`):
 
 While the camera window is open, you can adjust `desired-factor` live:
 - Keyboard: `+` / `-`
-- Touchscreen or mouse: tap the on-screen `+` and `-` buttons in the bottom-right corner
+- Touchscreen or mouse: tap the on-screen `ZOOM OUT` and `ZOOM IN` buttons in the footer
+- Motion control: use the footer `START` / `STOP` button
+- Recovery: use the footer `HOME` button or keyboard `r`
+- Quit: use the upper-right `QUIT` button
 
-The app now opens only the camera view window; the old graph popup has been removed.
+The app now opens only the camera view window with an integrated footer control area; the old graph popup has been removed.
 
 ---
 

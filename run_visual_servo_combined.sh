@@ -61,6 +61,6 @@ make -j"$(nproc)" servoFrankaIBVS_combined
   --no-convergence-threshold \
   --adaptive-gain \
   --tag-size 0.05 \
-  --desired-factor 7 \
+  --desired-factor 8 \
   --mode "$MODE" \
   "$@"

@@ -68,6 +68,10 @@
 #include <visp3/core/vpXmlParserCamera.h>
 #include <visp3/detection/vpDetectorAprilTag.h>
 #include <visp3/gui/vpDisplayFactory.h>
+#if defined(HAVE_OPENCV_HIGHGUI)
+#include <visp3/gui/vpDisplayOpenCV.h>
+#include <opencv2/highgui.hpp>
+#endif
 #include <visp3/io/vpImageIo.h>
 #include <visp3/robot/vpRobotFranka.h>
 #include <visp3/sensor/vpRealSense2.h>
@@ -185,28 +189,35 @@ void display_point_trajectory(const vpImage<unsigned char> &I, const std::vector
 int main(int argc, char **argv)
 {
   double opt_tag_size = 0.05; //default tag size was originally 0.12
-  double opt_desired_factor = 9.0; // desired camera-to-tag distance factor
+  double opt_desired_factor = 8.0; // desired camera-to-tag distance factor
   const double desired_factor_step = 1.0;
   const double desired_factor_min = 3.0;
   const double desired_factor_max = 20.0;
   const int ui_margin = 16;
+  const int ui_top_button_margin = 14;
   const int ui_button_height = 46;
+  const int ui_quit_button_width = 110;
+  const int ui_motion_button_width = 140;
   const int ui_zoom_button_width = 110;
   const int ui_recovery_button_width = 120;
   const int ui_button_gap = 14;
   const int ui_button_border = 2;
-  const int ui_bottom_band_height = 140;
+  const int ui_bottom_band_height = 172;
   const int ui_bottom_band_border = 2;
-  const int ui_status_line_gap = 24;
+  const int ui_status_line_gap = 30;
   const int ui_text_baseline_offset = 28;
   const int ui_status_row_padding = 14;
-  const int ui_button_row_margin_bottom = 16;
+  const int ui_button_row_margin_bottom = 12;
   const vpColor ui_footer_bg = vpColor::black;
   const vpColor ui_footer_separator = vpColor::darkBlue;
   const vpColor ui_text_primary = vpColor::white;
-  const vpColor ui_text_secondary = vpColor::cyan;
+  const vpColor ui_text_secondary = vpColor::white;
+  const vpColor ui_text_accent = vpColor::yellow;
   const vpColor ui_button_action = vpColor::blue;
+  const vpColor ui_button_motion_start = vpColor::green;
+  const vpColor ui_button_motion_stop = vpColor::orange;
   const vpColor ui_button_recovery = vpColor::green;
+  const vpColor ui_button_quit = vpColor::darkRed;
   const vpColor ui_warning = vpColor::orange;
   const vpColor ui_danger = vpColor::red;
   int opt_mode = 1;               // 1: single-tag (CHRPS), 2: sequenced multi-tag (Investment)
@@ -310,7 +321,8 @@ int main(int argc, char **argv)
 
   auto get_plus_button_rect = [&](const vpImage<unsigned char> &image) {
     const int top = static_cast<int>(image.getHeight()) - ui_button_height - ui_button_row_margin_bottom;
-    const int left = static_cast<int>(image.getWidth()) - static_cast<int>(2 * ui_zoom_button_width + ui_button_gap + ui_margin);
+    const int left = static_cast<int>(image.getWidth()) -
+                     static_cast<int>(2 * ui_zoom_button_width + ui_motion_button_width + 2 * ui_button_gap + ui_margin);
     return vpRect(left, top, ui_zoom_button_width, ui_button_height);
   };
 
@@ -323,6 +335,17 @@ int main(int argc, char **argv)
   auto get_recovery_button_rect = [&](const vpImage<unsigned char> &image) {
     const int top = static_cast<int>(image.getHeight()) - ui_button_height - ui_button_row_margin_bottom;
     return vpRect(ui_margin, top, ui_recovery_button_width, ui_button_height);
+  };
+
+  auto get_quit_button_rect = [&](const vpImage<unsigned char> &image) {
+    return vpRect(static_cast<int>(image.getWidth()) - ui_quit_button_width - ui_top_button_margin,
+                  ui_top_button_margin, ui_quit_button_width, ui_button_height);
+  };
+
+  auto get_motion_button_rect = [&](const vpImage<unsigned char> &image) {
+    vpRect minus_button = get_minus_button_rect(image);
+    return vpRect(minus_button.getLeft() + ui_zoom_button_width + ui_button_gap,
+                  minus_button.getTop(), ui_motion_button_width, ui_button_height);
   };
 
   for (int i = 1; i < argc; ++i) {
@@ -459,11 +482,26 @@ int main(int argc, char **argv)
 
   vpImage<unsigned char> I(height, width);
   vpImage<unsigned char> Iui(height + ui_bottom_band_height, width, 0);
+  const std::string display_title = "Current image";
 
 #if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
-  std::shared_ptr<vpDisplay> display = vpDisplayFactory::createDisplay(Iui, 10, 10, "Current image");
+  std::shared_ptr<vpDisplay> display;
+#if defined(HAVE_OPENCV_HIGHGUI)
+  cv::namedWindow(display_title, cv::WINDOW_NORMAL);
+  cv::resizeWindow(display_title, static_cast<int>(Iui.getWidth()), static_cast<int>(Iui.getHeight()));
+  display = std::make_shared<vpDisplayOpenCV>(Iui, 10, 10, display_title, vpDisplay::SCALE_DEFAULT);
 #else
-  vpDisplay *display = vpDisplayFactory::allocateDisplay(Iui, 10, 10, "Current image");
+  display = vpDisplayFactory::createDisplay(Iui, 10, 10, display_title);
+#endif
+#else
+  vpDisplay *display;
+#if defined(HAVE_OPENCV_HIGHGUI)
+  cv::namedWindow(display_title, cv::WINDOW_NORMAL);
+  cv::resizeWindow(display_title, static_cast<int>(Iui.getWidth()), static_cast<int>(Iui.getHeight()));
+  display = new vpDisplayOpenCV(Iui, 10, 10, display_title, vpDisplay::SCALE_DEFAULT);
+#else
+  display = vpDisplayFactory::allocateDisplay(Iui, 10, 10, display_title);
+#endif
 #endif
 
   std::cout << "Parameters:" << std::endl;
@@ -620,7 +658,7 @@ int main(int argc, char **argv)
       robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
       robot.setPosition(vpRobot::JOINT_STATE, recovery_joint_pose);
       robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
-      operator_status = "Recovery pose reached. Left click to resume servoing.";
+      operator_status = "Recovery pose reached. Use START to resume servoing.";
       operator_status_color = ui_text_secondary;
     };
 
@@ -668,10 +706,8 @@ int main(int argc, char **argv)
       {
         std::stringstream ss_factor;
         ss_factor << std::fixed << std::setprecision(1)
-                  << "Zoom out / zoom in: desired factor = " << opt_desired_factor
-                  << "  (distance " << desired_factor_distance_cm() << " cm)";
-        status_line_1 = send_velocities ? "Left click: stop servo   Right click: quit   R/HOME: recovery pose"
-                                        : "Left click: start servo   Right click: quit   R/HOME: recovery pose";
+                  << "Distance target: " << desired_factor_distance_cm() << " cm   Level " << opt_desired_factor;
+        status_line_1 = "START/STOP controls motion   HOME sends recovery pose";
         status_line_2 = ss_factor.str();
 
         if (opt_mode == 2 && target_tag_id >= 0) {
@@ -1009,14 +1045,25 @@ int main(int argc, char **argv)
 
       vpRect plus_button = get_plus_button_rect(Iui);
       vpRect minus_button = get_minus_button_rect(Iui);
+      vpRect motion_button = get_motion_button_rect(Iui);
       vpRect recovery_button = get_recovery_button_rect(Iui);
+      vpRect quit_button = get_quit_button_rect(Iui);
+      vpDisplay::displayRectangle(Iui, quit_button, ui_button_quit, false, ui_button_border);
+      vpDisplay::displayText(Iui, static_cast<int>(quit_button.getTop()) + ui_text_baseline_offset,
+                             static_cast<int>(quit_button.getLeft()) + 28, "QUIT", ui_text_primary);
       vpDisplay::displayRectangle(Iui, plus_button, ui_button_action, false, ui_button_border);
       vpDisplay::displayRectangle(Iui, minus_button, ui_button_action, false, ui_button_border);
+      vpDisplay::displayRectangle(Iui, motion_button,
+                                  send_velocities ? ui_button_motion_stop : ui_button_motion_start,
+                                  false, ui_button_border);
       vpDisplay::displayRectangle(Iui, recovery_button, ui_button_recovery, false, ui_button_border);
       vpDisplay::displayText(Iui, static_cast<int>(plus_button.getTop()) + ui_text_baseline_offset,
                              static_cast<int>(plus_button.getLeft()) + 14, "ZOOM OUT", ui_text_primary);
       vpDisplay::displayText(Iui, static_cast<int>(minus_button.getTop()) + ui_text_baseline_offset,
                              static_cast<int>(minus_button.getLeft()) + 18, "ZOOM IN", ui_text_primary);
+      vpDisplay::displayText(Iui, static_cast<int>(motion_button.getTop()) + ui_text_baseline_offset,
+                             static_cast<int>(motion_button.getLeft()) + (send_velocities ? 34 : 38),
+                             send_velocities ? "STOP" : "START", ui_text_primary);
       vpDisplay::displayText(Iui, static_cast<int>(recovery_button.getTop()) + ui_text_baseline_offset,
                              static_cast<int>(recovery_button.getLeft()) + 18, "HOME", ui_text_primary);
 
@@ -1024,7 +1071,7 @@ int main(int argc, char **argv)
         vpDisplay::displayText(Iui, status_row_1, status_text_left, status_line_1, ui_text_primary);
       }
       if (!status_line_2.empty()) {
-        vpDisplay::displayText(Iui, status_row_2, status_text_left, status_line_2, ui_text_secondary);
+        vpDisplay::displayText(Iui, status_row_2, status_text_left, status_line_2, ui_text_accent);
       }
       if (!safety_status.empty()) {
         vpColor safety_color = ui_warning;
@@ -1044,9 +1091,23 @@ int main(int argc, char **argv)
       }
       vpDisplay::flush(Iui);
 
+      bool desired_factor_changed = false;
+#if defined(HAVE_OPENCV_HIGHGUI)
+      const int keycode = cv::waitKeyEx(1);
+      if (keycode == '+' || keycode == '=') {
+        opt_desired_factor = std::min(desired_factor_max, opt_desired_factor + desired_factor_step);
+        desired_factor_changed = true;
+      }
+      else if (keycode == '-' || keycode == '_') {
+        opt_desired_factor = std::max(desired_factor_min, opt_desired_factor - desired_factor_step);
+        desired_factor_changed = true;
+      }
+      else if (keycode == 'r' || keycode == 'R') {
+        move_to_recovery_pose();
+      }
+#else
       std::string key;
       if (vpDisplay::getKeyboardEvent(Iui, key, false)) {
-        bool desired_factor_changed = false;
         if (key == "+" || key == "=") {
           opt_desired_factor = std::min(desired_factor_max, opt_desired_factor + desired_factor_step);
           desired_factor_changed = true;
@@ -1058,13 +1119,13 @@ int main(int argc, char **argv)
         else if (key == "r" || key == "R") {
           move_to_recovery_pose();
         }
-
-        if (desired_factor_changed) {
-          update_desired_pose();
-          if (opt_verbose) {
-            std::cout << "Updated desired factor to " << opt_desired_factor
-                      << " (distance " << desired_factor_distance_cm() << " cm)" << std::endl;
-          }
+      }
+#endif
+      if (desired_factor_changed) {
+        update_desired_pose();
+        if (opt_verbose) {
+          std::cout << "Updated desired factor to " << opt_desired_factor
+                    << " (distance " << desired_factor_distance_cm() << " cm)" << std::endl;
         }
       }
 
@@ -1073,7 +1134,9 @@ int main(int argc, char **argv)
       if (vpDisplay::getClick(Iui, click_ip, button, false)) {
         vpRect plus_button = get_plus_button_rect(Iui);
         vpRect minus_button = get_minus_button_rect(Iui);
+        vpRect motion_button = get_motion_button_rect(Iui);
         vpRect recovery_button = get_recovery_button_rect(Iui);
+        vpRect quit_button = get_quit_button_rect(Iui);
 
         switch (button) {
         case vpMouseButton::button1:
@@ -1088,17 +1151,20 @@ int main(int argc, char **argv)
           else if (click_ip.inRectangle(recovery_button)) {
             move_to_recovery_pose();
           }
-          else {
+          else if (click_ip.inRectangle(motion_button)) {
             send_velocities = !send_velocities;
             if (send_velocities) {
               operator_status.clear();
             }
           }
+          else if (click_ip.inRectangle(quit_button)) {
+            final_quit = true;
+            send_velocities = false;
+            v_c = 0;
+          }
           break;
 
         case vpMouseButton::button3:
-          final_quit = true;
-          v_c = 0;
           break;
 
         default:
@@ -1130,11 +1196,17 @@ int main(int argc, char **argv)
         vpDisplay::flush(Iui);
       }
     }
+#if defined(HAVE_OPENCV_HIGHGUI)
+    cv::destroyWindow(display_title);
+#endif
   }
   catch (const vpException &e) {
     std::cout << "ViSP exception: " << e.what() << std::endl;
     std::cout << "Stop the robot " << std::endl;
     robot.setRobotState(vpRobot::STATE_STOP);
+#if defined(HAVE_OPENCV_HIGHGUI)
+    cv::destroyWindow(display_title);
+#endif
 #if (VISP_CXX_STANDARD < VISP_CXX_STANDARD_11)
     if (display != nullptr) {
       delete display;
@@ -1147,6 +1219,9 @@ int main(int argc, char **argv)
     std::cout << "Check if you are connected to the Franka robot"
       << " or if you specified the right IP using --ip command line option set by default to 192.168.1.1. "
       << std::endl;
+#if defined(HAVE_OPENCV_HIGHGUI)
+    cv::destroyWindow(display_title);
+#endif
 #if (VISP_CXX_STANDARD < VISP_CXX_STANDARD_11)
     if (display != nullptr) {
       delete display;
@@ -1156,6 +1231,9 @@ int main(int argc, char **argv)
   }
   catch (const std::exception &e) {
     std::cout << "Franka exception: " << e.what() << std::endl;
+#if defined(HAVE_OPENCV_HIGHGUI)
+    cv::destroyWindow(display_title);
+#endif
 #if (VISP_CXX_STANDARD < VISP_CXX_STANDARD_11)
     if (display != nullptr) {
       delete display;
@@ -1168,6 +1246,10 @@ int main(int argc, char **argv)
   if (display != nullptr) {
     delete display;
   }
+#endif
+
+#if defined(HAVE_OPENCV_HIGHGUI)
+  cv::destroyWindow(display_title);
 #endif
 
   update_arm_moving_state(false, last_arm_moving_state, true);
