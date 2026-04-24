@@ -102,7 +102,7 @@ double scan_backoff_secs = 3.5;
 ## Safety features
 
 - **Servo speed caps**: Translational and rotational camera-frame velocities are clamped (`servo_max_linear`, `servo_max_angular`) to keep approach slow.
-- **Orientation guard**: If the current-to-desired tag orientation error exceeds ±95°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
+- **Orientation guard**: If the current-to-desired tag orientation error exceeds ±45°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
 - **Velocity smoothing**: A first-order low-pass filter (`vel_smooth_alpha`) blends new commands with the previous ones to reduce twitchiness while keeping the caps/guard in place.
 
 Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.

@@ -698,7 +698,7 @@ int main(int argc, char **argv)
           double theta_err_deg = vpMath::deg(theta_err); // always positive; use as absolute rotation error
           if (theta_err_deg > vpMath::deg(orientation_stop_thresh)) {
             v_c = 0;
-            vpDisplay::displayText(I, overlay_row_3, overlay_left, "Orientation |error| >95 deg: holding position", vpColor::orange);
+            vpDisplay::displayText(I, overlay_row_3, overlay_left, "Orientation |error| >45 deg: holding position", vpColor::orange);
             if (opt_verbose) {
               std::cout << "Orientation error " << theta_err_deg << " deg exceeds threshold; velocities zeroed\n";
             }
