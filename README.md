@@ -1,36 +1,46 @@
 # FR3 Visual Servo Examples
 
-Visual servoing application for the Franka Research 3 (FR3) robot using ViSP and an Intel RealSense camera.  
-This project extends ViSP’s `servoFrankaIBVS` example with configurable tag size, adjustable desired distance, and lost-target recovery behavior when the AprilTag is not visible.
+Visual servoing for the Franka Research 3 (FR3) using ViSP, libfranka, Intel RealSense, and a Qt5 operator GUI.
 
-## User Guide
+This repo now ships a Qt-based `servoFrankaIBVS_combined` application. ViSP still handles camera acquisition, AprilTag pose estimation, and the IBVS control law, but the operator-facing window, controls, and status area are owned by Qt instead of the older ViSP/OpenCV display path.
 
-This application moves the FR3 by visual servoing on an AprilTag seen by the RealSense camera. In normal operation, the camera detects the tag, estimates its pose, and commands Cartesian velocity so the robot approaches the desired viewing position while respecting the configured safety limits.
+## What It Does
 
-Typical use flow:
-1. Complete camera calibration and verify the upstream beginner example works on your setup.
-2. Build this project and confirm you have a valid hand-eye calibration file such as `config/eMc.yaml`.
-3. Place a supported AprilTag in the camera view with a known physical size.
-4. Put the robot in the correct mode for velocity control and make sure the FR3 is reachable at the IP you will pass on the command line.
-5. Start the optional local robot-state API first if you want `arm_moving` updates forwarded to the LSL pipeline.
-6. Launch `servoFrankaIBVS_combined` with the calibration file, robot IP, tag size, and desired distance settings.
-7. Watch the camera window and verify the tag is detected before allowing the robot to continue moving toward the target pose.
+The app detects an AprilTag in the camera image and commands Cartesian camera-frame velocity so the robot approaches a desired viewing pose.
 
-What you need before running:
-- A working FR3 + `libfranka` setup.
-- ViSP built with Franka and RealSense support.
-- An Intel RealSense camera mounted consistently with your calibration.
-- A printed AprilTag of known size.
-- The camera-to-end-effector calibration file passed through `--eMc`.
+Current capabilities:
+- Single-tag servo mode (`--mode 1`)
+- Sequenced multi-tag mode (`--mode 2`) using target IDs `{1, 2, 1}` on a 5 s cycle
+- Adjustable desired standoff distance
+- Lost-target recovery with backoff and biased turning
+- Safety supervisor for joint margins, workspace bounds, proximity, and Franka contact/collision/error conditions
+- Manual recovery pose through the GUI
+- Local `arm_moving` state POSTs to `http://127.0.0.1:8765/state`
 
-How to run:
-- Build the project from the repo root:
+## Requirements
+
+- FR3 reachable over the network
+- `libfranka`
+- ViSP built with Franka, RealSense2, and pugixml support
+- Intel RealSense SDK 2.x
+- Qt5 development packages: `Widgets`, `Core`, `Gui`
+- CMake >= 3.10
+- C++17 compiler
+- Hand-eye calibration file for `--eMc`
+- Printed AprilTag of known physical size
+
+## Build
+
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DViSP_DIR=~/visp_install/lib/cmake/visp
-make -j$(nproc)
+mkdir -p build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DViSP_DIR=$HOME/visp_install/lib/cmake/visp
+cmake --build build -j"$(nproc)" --target servoFrankaIBVS_combined
 ```
-- Start the application from the repo root with your robot IP:
+
+## Run
+
+Direct binary:
+
 ```bash
 ./build/servoFrankaIBVS_combined \
   --eMc config/eMc.yaml \
@@ -41,216 +51,151 @@ make -j$(nproc)
   --mode 1
 ```
 
-What the main arguments do:
-- `--eMc`: path to the hand-eye calibration file.
-- `--ip`: FR3 IP address.
-- `--tag-size`: physical AprilTag size in meters.
-- `--desired-factor`: desired standoff distance, computed as `tag_size * desired_factor`.
-- `--adaptive-gain`: enables adaptive visual-servo gain for smoother convergence.
-- `--mode 1`: single-tag behavior.
-- `--mode 2`: sequenced multi-tag behavior.
+Launcher script:
 
-How to use the app while it is running:
-- Keep the target AprilTag visible in the camera window.
-- Use `+` and `-` on the keyboard to increase or decrease `desired-factor` live.
-- On a touchscreen or with a mouse, press the on-screen `ZOOM OUT` and `ZOOM IN` buttons in the footer.
-- Use the on-screen `START` / `STOP` button to enable or halt robot motion.
-- Use the on-screen `QUIT` button in the upper-right corner to close the app.
-- Use `r` on the keyboard or press the on-screen `HOME` button in the lower-left corner to move the robot to the configured recovery pose.
-- Watch for lost-target behavior: if the tag disappears, the robot briefly backs off and biases its search using the last observed image motion.
-- Stop the run immediately if detection is unstable, calibration looks wrong, or the robot motion does not match the camera image.
-
-Recommended operating practice:
-- Start with a conservative `desired-factor` and low-risk robot pose.
-- Make sure the tag is well lit and fully visible before engaging.
-- Keep people and obstacles clear of the robot path.
-- Verify tag size, calibration, and camera mounting whenever servo behavior looks inconsistent.
-
-## Camera Calibration and Beginner Example
-
-Before doing anything with this visual servoing example, follow the instructions from this GitHub Repo: https://github.com/yiherngang/Franka-Research-3-with-ROS-2-Imvia-lab/tree/main?tab=readme-ov-file#70-visual-servoing-with-franka-research-3 and make sure you perform the camera calibration correctly, and the provided visual servoing example works with your robot arm.
-
-## Lost-target recovery
-
-When the AprilTag is lost, the controller uses the
-**last known image drift** of the tag to **turn directly toward where it was heading**.
-
-### Logic
-1. **Backoff window (default 3.5 s)**  
-   Gently move backward to widen FOV.
-2. **Biased turn window (default 3.5 s)**  
-   Apply an angular velocity bias from the last centroid motion in pixels/sec:  
-   - Horizontal drift → yaw/roll bias  
-   - Vertical drift → pitch bias  
-   The bias decays over time if the tag is still not found.
-
-If the tag reappears, the timer resets and normal IBVS resumes.
-
-### Tuning knobs (in `src/servoFrankaIBVS_combined.cpp`)
-- `k_ang` (px/s → rad/s gain) and optional `bias_boost` multiply how hard we turn.
-- `max_angular` caps angular speed.
-- `bias_window_secs` controls how long we keep the pure biased turn before decaying.
-- `scan_backoff_secs` controls the initial backoff duration.
-- Optional: a small `v_c[2] = -0.01` m/s during biased turn can help re-acquire.
-
-Example safe settings:
-```cpp
-double k_ang = vpMath::rad(0.12);
-double bias_boost = 1.4;
-double max_angular = vpMath::rad(30);
-double bias_window_secs = 3.5;
-double scan_backoff_secs = 3.5;
+```bash
+./run_visual_servo_combined.sh
 ```
 
-## Safety features
+The launcher script:
+- rebuilds the binary
+- defaults to `--desired-factor 8`
+- defaults to `--mode 1`
+- uses `config/eMc.yaml` unless `--eMc` is passed
 
-- **Servo speed caps**: Translational and rotational camera-frame velocities are clamped (`servo_max_linear`, `servo_max_angular`) to keep approach slow.
-- **Orientation guard**: If the current-to-desired tag orientation error exceeds ±45°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
-- **Velocity smoothing**: A first-order low-pass filter (`vel_smooth_alpha`) blends new commands with the previous ones to reduce twitchiness while keeping the caps/guard in place.
-- **Soft joint-limit guard**: The app reads current FR3 joint angles and blocks motion when any joint gets within a configured soft margin of the robot's ViSP-reported joint limits.
-- **Workspace guard**: The app reads the live camera pose in the robot base frame and stops if that pose leaves a configured Cartesian workspace box.
-- **Proximity stop**: While the tag is tracked, the app stops if the estimated camera-to-tag distance drops below a configured minimum threshold.
-- **Contact / collision / wrench guard**: The app monitors Franka-reported contact, collision, control-error, and external wrench estimates and disables commanded motion when any of them trips.
-- **Manual recovery pose**: The operator can command a predefined joint-space recovery pose from the GUI (`HOME`) or keyboard (`r`) after a safety stop or whenever a neutral pose is needed.
-- **Explicit motion enable**: Robot motion is enabled and disabled only through the dedicated footer control (`START` / `STOP`) rather than by clicking the camera image.
-- **Explicit quit control**: App exit is available only through the dedicated `QUIT` control in the upper-right corner.
+Example with overrides:
 
-Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.
+```bash
+./run_visual_servo_combined.sh --ip 172.16.0.2 --eMc config/eMc.yaml --mode 2
+```
+
+## Main Arguments
+
+- `--eMc`: camera-to-end-effector calibration file
+- `--ip`: robot controller IP
+- `--tag-size`: physical tag size in meters
+- `--desired-factor`: desired distance factor, with distance computed as `tag_size * desired_factor`
+- `--adaptive-gain`: enable adaptive visual-servo gain
+- `--mode 1`: single-tag mode
+- `--mode 2`: sequenced multi-tag mode
+- `--tag-z-aligned`: use z-aligned pose estimate
+- `--tag-quad-decimate`: AprilTag detector decimation factor
+- `--intrinsic`: camera intrinsics XML file
+- `--camera-name`: camera name entry inside the XML file
+- `--no-convergence-threshold`: disable the convergence stop threshold
+- `--verbose`: enable additional logging
+
+With `--tag-size 0.05` and `--desired-factor 8`, the target distance is `0.40 m` or `40 cm`.
+
+## GUI Operation
+
+The shipped app is a Qt window with:
+- central live camera image
+- top-right `QUIT` button
+- status area below the image
+- bottom control row
+
+Controls:
+- `START`: enable robot motion
+- `STOP`: disable robot motion
+- `HOME`: move to the predefined recovery pose
+- `ZOOM OUT`: increase `desired-factor`
+- `ZOOM IN`: decrease `desired-factor`
+- `QUIT`: close the app
+
+Status area:
+- line 1: control hints
+- line 2: target distance and current level
+- line 3: live operator or safety message
+
+Important behavior:
+- the app starts with motion disabled
+- motion is controlled through the `START` / `STOP` button, not by clicking the image
+- the native window close button is intentionally not the primary control path; use the in-app `QUIT` button
+
+## Typical Operating Flow
+
+1. Verify camera calibration and hand-eye calibration on your setup.
+2. Start the local robot-state API first if you want `arm_moving` forwarded into your FR3/LSL tooling.
+3. Launch the app with the correct `--eMc`, robot IP, and tag size.
+4. Confirm the AprilTag is visible and the overlay is stable.
+5. Adjust the desired distance with `ZOOM OUT` / `ZOOM IN` if needed.
+6. Press `START` when you are ready to allow motion.
+7. Use `STOP`, `HOME`, or `QUIT` as needed.
+
+## Lost-Target Recovery
+
+If the AprilTag is lost:
+- the app first backs off for a short window
+- then it applies a biased angular search based on the last observed image drift
+- if the tag reappears, normal IBVS resumes
+
+Key tuning parameters live in [src/VisualServoController.cpp](/home/parc/FR3_visual_servo_examples/src/VisualServoController.cpp):
+- `scan_backoff_secs_`
+- `backoff_speed_`
+- `bias_window_secs_`
+- `k_ang_`
+- `max_angular_`
+
+## Safety Features
+
+Implemented controller-side safeguards:
+- servo translational and rotational speed caps
+- orientation guard at `±45 deg`
+- low-pass smoothing of commanded velocity
+- soft joint-limit margin guard
+- base-frame workspace guard
+- minimum camera-to-tag distance stop
+- Franka contact, collision, external wrench, and control-error stop
+- manual recovery pose
+- explicit motion enable through the GUI
+
+Important limitation:
+- these are controller-side guards, not a full certified safety system
+- the app still depends on correct calibration, correct workspace tuning, and the robot-side protections in libfranka / FR3
+
+Tune the main safety values in [src/VisualServoController.h](/home/parc/FR3_visual_servo_examples/src/VisualServoController.h).
 
 ## Robot-State / LSL Integration
 
-`servoFrankaIBVS_combined.cpp` now publishes `arm_moving` directly to the local robot-state API used by the FR3 control / LSL tooling.
+The controller posts:
+- `{"arm_moving": 1}` when visual servo is actively commanding nontrivial motion
+- `{"arm_moving": 0}` when commanded motion drops idle
+- a final `arm_moving = 0` on shutdown
 
-Current behavior:
-- when visual servo is actively commanding a nontrivial Cartesian velocity, it posts `{"arm_moving": 1}` to `http://127.0.0.1:8765/state`
-- when commanded velocity drops to idle, it posts `{"arm_moving": 0}`
-- on clean app exit, it forces a final `arm_moving = 0` update
+Endpoint:
 
-This is intentionally controller-side rather than ROS-topic-side, since the ViSP/libfranka control path is the most reliable place to determine whether the robot is actually being commanded to move during visual servoing.
-
-Prerequisite:
-- the local state API (`robot_state_api.py` from the FR3 control GUI repo) must be running if you want these updates to appear in the `FR3_State` LSL stream
-
-
-## 📦 Dependencies
-
-- [libfranka](https://frankaemika.github.io/docs/installation_linux.html) (for FR3)
-- [ViSP](https://visp.inria.fr) >= 3.6, built with RealSense and Franka support
-- [Intel RealSense SDK 2.x](https://github.com/IntelRealSense/librealsense)
-- CMake >= 3.10
-- A C++17 compiler (GCC >= 9 recommended)
-
----
-
-## 🔧 Building ViSP (once)
-
-```bash
-# Clone ViSP
-git clone https://github.com/lagadic/visp.git
-cd visp
-mkdir build && cd build
-
-# Configure + build + install
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/visp_install -DBUILD_EXAMPLES=OFF -DBUILD_DEMOS=OFF
-make -j$(nproc)
-make install
+```text
+http://127.0.0.1:8765/state
 ```
 
-This will install ViSP into `~/visp_install`.
+If that local state API is not running, the visual servo app still runs, but those state updates will not be consumed downstream.
 
----
+## Project Structure
 
-## 🚀 Building (CHRPS + Combined)
-
-```bash
-git clone https://github.com/ulubilgeulusoy/FR3_visual_servo_examples.git
-cd FR3_visual_servo_examples
-mkdir build && cd build
-
-cmake .. -DCMAKE_BUILD_TYPE=Release -DViSP_DIR=~/visp_install/lib/cmake/visp
-make -j$(nproc)
-
-# Or build just the combined binary
-make servoFrankaIBVS_combined
-```
-
----
-
-## ▶️ Running The Combined App
-
-Binary: `servoFrankaIBVS_combined` (also wrapped by `run_visual_servo_combined.sh`)
-
-If you want `arm_moving` to propagate into the FR3 LSL stream during visual servoing, make sure the local state API is already running on the same machine at `http://127.0.0.1:8765/state`.
-
-Example run (FR3 connected at `172.16.0.2`):
-
-```bash
-./build/servoFrankaIBVS_combined \
-  --eMc config/eMc.yaml \
-  --ip 172.16.0.2 \
-  --tag-size 0.05 \
-  --desired-factor 8 \
-  --adaptive-gain \
-  --mode 1
-```
-
-- `--tag-size` sets the physical AprilTag size in meters (default `0.05 m`)
-- `--desired-factor` sets the desired camera distance as `tag_size * desired_factor`
-  With `tag-size=0.05`, `desired-factor=8` means `0.40 m` or `40 cm`
-  Safety floor: the minimum allowed `desired-factor` is `3`
-- `--eMc` provides the camera-to-end-effector calibration file
-- `--adaptive-gain` improves convergence
-- `--mode` selects single-tag (`1`) or sequenced multi-tag (`2`) behavior
-
-While the camera window is open, you can adjust `desired-factor` live:
-- Keyboard: `+` / `-`
-- Touchscreen or mouse: tap the on-screen `ZOOM OUT` and `ZOOM IN` buttons in the footer
-- Motion control: use the footer `START` / `STOP` button
-- Recovery: use the footer `HOME` button or keyboard `r`
-- Quit: use the upper-right `QUIT` button
-
-The app now opens only the camera view window with an integrated footer control area; the old graph popup has been removed.
-
----
-
-## ▶️ Combined App (mode switch)
-
-Modes:
-- `--mode 1` (default): single-tag CHRPS behavior — expects exactly one detected tag; keeps CHRPS safety features (velocity caps, orientation guard, low-pass smoothing) and rolling 2 s corner trajectories.
-- `--mode 2`: multi-tag sequence like the Investment variant — cycles AprilTag IDs `{1,2,1,...}` every 5 s; only servos to the current target ID; displays the active target and lost-target overlays. Safety caps and smoothing remain enabled.
-
-Example:
-```bash
-# mode 1 (single tag, default)
-./servoFrankaIBVS_combined --eMc config/eMc.yaml --ip 172.16.0.2 --mode 1
-
-# mode 2 (tag ID sequence)
-./servoFrankaIBVS_combined --eMc config/eMc.yaml --ip 172.16.0.2 --mode 2
-```
-
-Helper script (builds then runs combined):
-```bash
-MODE=2 ./run_visual_servo_combined.sh   # set MODE=1 or 2
-```
-
-## 📂 Project Structure
-
-```
+```text
 FR3_visual_servo_examples/
 ├── src/
+│   ├── main_qt.cpp
+│   ├── MainWindow.cpp
+│   ├── MainWindow.h
+│   ├── VisualServoController.cpp
+│   ├── VisualServoController.h
 │   └── servoFrankaIBVS_combined.cpp
 ├── run_visual_servo_combined.sh
 ├── CMakeLists.txt
 └── README.md
 ```
 
----
+Notes:
+- `main_qt.cpp` handles CLI parsing and app startup
+- `MainWindow.*` owns the Qt GUI
+- `VisualServoController.*` owns camera, detection, servo, safety, and robot commands
+- `servoFrankaIBVS_combined.cpp` is the older single-file implementation kept as reference; the current binary is built from the Qt path
 
-## 📝 Notes
+## Notes
 
-- Default tag family is `36h11`.
-- The robot must be in **velocity control mode** and connected before running.
-- If no tag is detected, the robot moves back briefly to try to reacquire it.
-- Visual-servo `arm_moving` state is derived from the commanded ViSP camera-frame velocity, not from external ROS joint-state inference.
-
----
+- Default AprilTag family is `36h11`
+- The robot must be reachable and able to enter velocity control before use
+- If no tag is detected, the app performs recovery behavior rather than normal servoing
+- The current default desired level is `8`
