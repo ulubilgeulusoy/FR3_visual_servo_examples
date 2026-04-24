@@ -80,9 +80,11 @@
 #include <algorithm>   // min, max
 #include <tuple>       // tuple, tie, make_tuple
 #include <deque>       // deque for short trajectory window
+#include <array>
 #include <vector>
 #include <cstdlib>
 #include <sstream>
+#include <cstring>
 
 
 
@@ -122,6 +124,36 @@ double command_norm(const vpColVector &v)
   }
   return std::sqrt(sum);
 }
+
+bool any_level_triggered(const std::array<double, 7> &levels)
+{
+  for (double level : levels) {
+    if (level > 0.0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool any_level_triggered(const std::array<double, 6> &levels)
+{
+  for (double level : levels) {
+    if (level > 0.0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+double force_norm3(const std::array<double, 6> &wrench)
+{
+  return std::sqrt(wrench[0] * wrench[0] + wrench[1] * wrench[1] + wrench[2] * wrench[2]);
+}
+
+double torque_norm3(const std::array<double, 6> &wrench)
+{
+  return std::sqrt(wrench[3] * wrench[3] + wrench[4] * wrench[4] + wrench[5] * wrench[5]);
+}
 } // namespace
 
 void display_point_trajectory(const vpImage<unsigned char> &I, const std::vector<vpImagePoint> &vip,
@@ -157,13 +189,26 @@ int main(int argc, char **argv)
   const double desired_factor_step = 1.0;
   const double desired_factor_min = 3.0;
   const double desired_factor_max = 20.0;
-  const unsigned int touch_button_size = 44;
-  const unsigned int touch_button_gap = 12;
-  const int overlay_left = 20;
-  const int overlay_row_1 = 20;
-  const int overlay_row_2 = 42;
-  const int overlay_row_3 = 64;
-  const int overlay_bottom = 20;
+  const int ui_margin = 16;
+  const int ui_button_height = 46;
+  const int ui_zoom_button_width = 110;
+  const int ui_recovery_button_width = 120;
+  const int ui_button_gap = 14;
+  const int ui_button_border = 2;
+  const int ui_bottom_band_height = 140;
+  const int ui_bottom_band_border = 2;
+  const int ui_status_line_gap = 24;
+  const int ui_text_baseline_offset = 28;
+  const int ui_status_row_padding = 14;
+  const int ui_button_row_margin_bottom = 16;
+  const vpColor ui_footer_bg = vpColor::black;
+  const vpColor ui_footer_separator = vpColor::darkBlue;
+  const vpColor ui_text_primary = vpColor::white;
+  const vpColor ui_text_secondary = vpColor::cyan;
+  const vpColor ui_button_action = vpColor::blue;
+  const vpColor ui_button_recovery = vpColor::green;
+  const vpColor ui_warning = vpColor::orange;
+  const vpColor ui_danger = vpColor::red;
   int opt_mode = 1;               // 1: single-tag (CHRPS), 2: sequenced multi-tag (Investment)
   bool opt_tag_z_aligned = false;
   std::string opt_robot_ip = "192.168.1.1";
@@ -202,6 +247,23 @@ int main(int argc, char **argv)
   double orientation_stop_thresh = vpMath::rad(45); // deg -> rad; stop if orientation error exceeds this
 
   double vel_smooth_alpha = 0.3;           // 0..1; higher = less smoothing
+
+  // --- Additional safety supervisor guards ---
+  const double joint_limit_margin = vpMath::rad(10); // hold if any joint is within this margin of min/max
+  const double workspace_x_min = 0.20;     // base-frame camera workspace [m]
+  const double workspace_x_max = 0.75;
+  const double workspace_y_min = -0.55;
+  const double workspace_y_max = 0.55;
+  const double workspace_z_min = 0.10;
+  const double workspace_z_max = 0.85;
+  const double min_tag_distance = 0.20;    // stop forward motion when camera-to-tag distance gets too small
+  const double max_external_force = 20.0;  // N
+  const double max_external_torque = 6.0;  // Nm
+  vpColVector recovery_joint_pose(7, 0.0);
+  recovery_joint_pose[1] = vpMath::rad(-45);
+  recovery_joint_pose[3] = vpMath::rad(-135);
+  recovery_joint_pose[5] = vpMath::rad(90);
+  recovery_joint_pose[6] = vpMath::rad(45);
 
   double lost_start_ms = -1.0;             // timestamp when we first lost the tag
   // Mode 2 (Investment-style) sequencing between multiple tag IDs
@@ -247,15 +309,20 @@ int main(int argc, char **argv)
   };
 
   auto get_plus_button_rect = [&](const vpImage<unsigned char> &image) {
-    const int top = static_cast<int>(image.getHeight()) - static_cast<int>(touch_button_size) - 12;
-    const int left = static_cast<int>(image.getWidth()) - static_cast<int>(2 * touch_button_size + touch_button_gap + 12);
-    return vpRect(left, top, touch_button_size, touch_button_size);
+    const int top = static_cast<int>(image.getHeight()) - ui_button_height - ui_button_row_margin_bottom;
+    const int left = static_cast<int>(image.getWidth()) - static_cast<int>(2 * ui_zoom_button_width + ui_button_gap + ui_margin);
+    return vpRect(left, top, ui_zoom_button_width, ui_button_height);
   };
 
   auto get_minus_button_rect = [&](const vpImage<unsigned char> &image) {
     vpRect plus_button = get_plus_button_rect(image);
-    return vpRect(plus_button.getLeft() + static_cast<int>(touch_button_size + touch_button_gap),
-                  plus_button.getTop(), touch_button_size, touch_button_size);
+    return vpRect(plus_button.getLeft() + ui_zoom_button_width + ui_button_gap,
+                  plus_button.getTop(), ui_zoom_button_width, ui_button_height);
+  };
+
+  auto get_recovery_button_rect = [&](const vpImage<unsigned char> &image) {
+    const int top = static_cast<int>(image.getHeight()) - ui_button_height - ui_button_row_margin_bottom;
+    return vpRect(ui_margin, top, ui_recovery_button_width, ui_button_height);
   };
 
   for (int i = 1; i < argc; ++i) {
@@ -391,11 +458,12 @@ int main(int argc, char **argv)
   rs.open(config);
 
   vpImage<unsigned char> I(height, width);
+  vpImage<unsigned char> Iui(height + ui_bottom_band_height, width, 0);
 
 #if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
-  std::shared_ptr<vpDisplay> display = vpDisplayFactory::createDisplay(I, 10, 10, "Current image");
+  std::shared_ptr<vpDisplay> display = vpDisplayFactory::createDisplay(Iui, 10, 10, "Current image");
 #else
-  vpDisplay *display = vpDisplayFactory::allocateDisplay(I, 10, 10, "Current image");
+  vpDisplay *display = vpDisplayFactory::allocateDisplay(Iui, 10, 10, "Current image");
 #endif
 
   std::cout << "Parameters:" << std::endl;
@@ -480,6 +548,8 @@ int main(int argc, char **argv)
 
   try {
     robot.connect(opt_robot_ip);
+    const vpColVector joint_min = robot.getJointMin();
+    const vpColVector joint_max = robot.getJointMax();
 
     // Create visual features
     std::vector<vpFeaturePoint> p(4), pd(4); // We use 4 points
@@ -533,6 +603,8 @@ int main(int argc, char **argv)
     bool has_converged = false;
     bool send_velocities = false;
     bool servo_started = false;
+    std::string operator_status;
+    vpColor operator_status_color = ui_text_secondary;
 
     static double t_init_servo = vpTime::measureTimeMs();
 
@@ -540,9 +612,25 @@ int main(int argc, char **argv)
     robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
 
     vpColVector v_c_filtered(6); // holds low-pass filtered velocity
+    auto move_to_recovery_pose = [&]() {
+      send_velocities = false;
+      v_c_filtered = 0;
+      robot.setVelocity(vpRobot::CAMERA_FRAME, vpColVector(6, 0.0));
+      robot.setRobotState(vpRobot::STATE_STOP);
+      robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
+      robot.setPosition(vpRobot::JOINT_STATE, recovery_joint_pose);
+      robot.setRobotState(vpRobot::STATE_VELOCITY_CONTROL);
+      operator_status = "Recovery pose reached. Left click to resume servoing.";
+      operator_status_color = ui_text_secondary;
+    };
 
     while (!has_converged && !final_quit) {
       double t_start = vpTime::measureTimeMs();
+      std::string safety_status;
+      std::string status_line_1;
+      std::string status_line_2;
+      std::string status_line_3;
+      vpColor status_line_3_color = ui_text_secondary;
       // Mode 2: cycle target IDs every phase duration
       int target_tag_id = -1;
       if (opt_mode == 2) {
@@ -555,8 +643,14 @@ int main(int argc, char **argv)
       }
 
       rs.acquire(I);
+      for (unsigned int r = 0; r < I.getHeight(); ++r) {
+        std::memcpy(Iui[r], I[r], I.getWidth() * sizeof(unsigned char));
+      }
+      for (unsigned int r = I.getHeight(); r < Iui.getHeight(); ++r) {
+        std::memset(Iui[r], 0, Iui.getWidth() * sizeof(unsigned char));
+      }
 
-      vpDisplay::display(I);
+      vpDisplay::display(Iui);
 
       std::vector<vpHomogeneousMatrix> c_M_o_vec;
       bool ret = detector.detect(I, opt_tag_size, cam, c_M_o_vec);
@@ -572,26 +666,19 @@ int main(int argc, char **argv)
       }
 
       {
-        std::stringstream ss;
-        ss << "Left click to " << (send_velocities ? "stop the robot" : "servo the robot") << ", right click to quit.";
-        vpDisplay::displayText(I, overlay_row_1, overlay_left, ss.str(), vpColor::red);
-
         std::stringstream ss_factor;
         ss_factor << std::fixed << std::setprecision(1)
-                  << "Keys +/- or touch buttons: desired factor = " << opt_desired_factor
+                  << "Zoom out / zoom in: desired factor = " << opt_desired_factor
                   << "  (distance " << desired_factor_distance_cm() << " cm)";
-        vpDisplay::displayText(I, overlay_row_2, overlay_left, ss_factor.str(), vpColor::red);
+        status_line_1 = send_velocities ? "Left click: stop servo   Right click: quit   R/HOME: recovery pose"
+                                        : "Left click: start servo   Right click: quit   R/HOME: recovery pose";
+        status_line_2 = ss_factor.str();
 
-        vpRect plus_button = get_plus_button_rect(I);
-        vpRect minus_button = get_minus_button_rect(I);
-        vpDisplay::displayRectangle(I, plus_button, vpColor::red, false, 2);
-        vpDisplay::displayRectangle(I, minus_button, vpColor::red, false, 2);
-        vpDisplay::displayText(I, static_cast<int>(plus_button.getTop()) + 29, static_cast<int>(plus_button.getLeft()) + 15, "+", vpColor::red);
-        vpDisplay::displayText(I, static_cast<int>(minus_button.getTop()) + 29, static_cast<int>(minus_button.getLeft()) + 16, "-", vpColor::red);
         if (opt_mode == 2 && target_tag_id >= 0) {
           std::stringstream ss_target;
           ss_target << "Targeting Apriltag id " << target_tag_id << " (36h11)";
-          vpDisplay::displayText(I, overlay_row_3, overlay_left, ss_target.str(), vpColor::red);
+          status_line_3 = ss_target.str();
+          status_line_3_color = ui_text_secondary;
         }
       }
 
@@ -698,7 +785,8 @@ int main(int argc, char **argv)
           double theta_err_deg = vpMath::deg(theta_err); // always positive; use as absolute rotation error
           if (theta_err_deg > vpMath::deg(orientation_stop_thresh)) {
             v_c = 0;
-            vpDisplay::displayText(I, overlay_row_3, overlay_left, "Orientation |error| >45 deg: holding position", vpColor::orange);
+            status_line_3 = "Orientation |error| >45 deg: holding position";
+            status_line_3_color = ui_warning;
             if (opt_verbose) {
               std::cout << "Orientation error " << theta_err_deg << " deg exceeds threshold; velocities zeroed\n";
             }
@@ -706,32 +794,29 @@ int main(int argc, char **argv)
         }
 
         // Display the current and desired feature points in the image display
-        vpServoDisplay::display(task, cam, I);
+        vpServoDisplay::display(task, cam, Iui);
         for (size_t i = 0; i < corners.size(); ++i) {
           std::stringstream ss;
           ss << i;
           // Display current point indexes
-          vpDisplay::displayText(I, corners[i] + vpImagePoint(15, 15), ss.str(), vpColor::red);
+          vpDisplay::displayText(Iui, corners[i] + vpImagePoint(15, 15), ss.str(), ui_danger);
           // Display desired point indexes
           vpImagePoint ip;
           vpMeterPixelConversion::convertPoint(cam, pd[i].get_x(), pd[i].get_y(), ip);
-          vpDisplay::displayText(I, ip + vpImagePoint(15, 15), ss.str(), vpColor::red);
+          vpDisplay::displayText(Iui, ip + vpImagePoint(15, 15), ss.str(), ui_danger);
         }
         if (traj_corners.empty()) {
           traj_corners.resize(corners.size());
         }
         // Display the trajectory of the points used as features (last 2 seconds)
         double now_ms = vpTime::measureTimeMs();
-        display_point_trajectory(I, corners, traj_corners, now_ms, 2000.0);
+        display_point_trajectory(Iui, corners, traj_corners, now_ms, 2000.0);
 
         if (opt_verbose) {
           std::cout << "v_c: " << v_c.t() << std::endl;
         }
 
         double error = task.getError().sumSquare();
-        std::stringstream ss;
-        ss << "error: " << error;
-        vpDisplay::displayText(I, overlay_row_1, static_cast<int>(I.getWidth()) - 150, ss.str(), vpColor::red);
 
         if (opt_verbose)
           std::cout << "error: " << error << std::endl;
@@ -739,7 +824,8 @@ int main(int argc, char **argv)
         if (error < convergence_threshold) {
           has_converged = true;
           std::cout << "Servo task has converged" << std::endl;
-          vpDisplay::displayText(I, overlay_row_3, overlay_left, "Servo task has converged", vpColor::red);
+          status_line_3 = "Servo task has converged";
+          status_line_3_color = ui_text_secondary;
         }
       } // end if (c_M_o_vec.size() == 1)
       
@@ -809,13 +895,14 @@ int main(int argc, char **argv)
           v_c[0] = 0.0; v_c[1] = 0.0; v_c[2] = 0.0;
           v_c[3] = wx;  v_c[4] = wy;  v_c[5] = wz;
 
-          vpDisplay::displayText(I, overlay_row_3, overlay_left,
-            (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..." : "No tag: decaying biased turn...",
-            vpColor::yellow);
+          status_line_3 = (dt_lost <= bias_window_secs) ? "No tag: pure biased turn..."
+                                                        : "No tag: decaying biased turn...";
+          status_line_3_color = ui_warning;
           if (opt_mode == 2 && target_tag_id >= 0) {
             std::stringstream ss_tag;
             ss_tag << "Looking for Apriltag id " << target_tag_id << " (36h11)";
-            vpDisplay::displayText(I, overlay_row_3, overlay_left, ss_tag.str(), vpColor::orange);
+            status_line_3 = ss_tag.str();
+            status_line_3_color = ui_warning;
           }
 
         }
@@ -836,21 +923,129 @@ int main(int argc, char **argv)
         v_c = v_c_filtered;
       }
 
+      bool hard_stop = false;
+      bool workspace_hold = false;
+      bool proximity_hold = false;
+      bool joint_margin_hold = false;
+
+      vpColVector q;
+      robot.getPosition(vpRobot::JOINT_STATE, q);
+      for (unsigned int i = 0; i < std::min<unsigned int>(7, q.size()); ++i) {
+        if ((q[i] - joint_min[i]) < joint_limit_margin || (joint_max[i] - q[i]) < joint_limit_margin) {
+          joint_margin_hold = true;
+          hard_stop = true;
+          safety_status = "Safety stop: joint-limit margin reached";
+          break;
+        }
+      }
+
+      vpPoseVector o_P_c;
+      robot.getPosition(vpRobot::CAMERA_FRAME, o_P_c);
+      vpHomogeneousMatrix o_M_c(o_P_c);
+      const vpTranslationVector &o_t_c = o_M_c.getTranslationVector();
+
+      if (!hard_stop) {
+        if (o_t_c[0] < workspace_x_min || o_t_c[0] > workspace_x_max ||
+            o_t_c[1] < workspace_y_min || o_t_c[1] > workspace_y_max ||
+            o_t_c[2] < workspace_z_min || o_t_c[2] > workspace_z_max) {
+          workspace_hold = true;
+          hard_stop = true;
+          safety_status = "Safety stop: camera left workspace bounds";
+        }
+      }
+
+      if (tag_ok && !hard_stop && c_M_o[2][3] <= min_tag_distance) {
+        proximity_hold = true;
+        hard_stop = true;
+        safety_status = "Safety stop: camera too close to target";
+      }
+
+      franka::RobotState internal_state = robot.getRobotInternalState();
+      const bool contact_detected = any_level_triggered(internal_state.joint_contact) ||
+                                    any_level_triggered(internal_state.cartesian_contact);
+      const bool collision_detected = any_level_triggered(internal_state.joint_collision) ||
+                                      any_level_triggered(internal_state.cartesian_collision);
+      const bool force_threshold_exceeded = force_norm3(internal_state.O_F_ext_hat_K) > max_external_force ||
+                                            torque_norm3(internal_state.O_F_ext_hat_K) > max_external_torque;
+      const bool robot_error = static_cast<bool>(internal_state.current_errors);
+
+      if (!hard_stop && (contact_detected || collision_detected || force_threshold_exceeded || robot_error)) {
+        hard_stop = true;
+        if (collision_detected) {
+          safety_status = "Safety stop: collision detected by Franka";
+        }
+        else if (contact_detected) {
+          safety_status = "Safety stop: contact detected by Franka";
+        }
+        else if (force_threshold_exceeded) {
+          safety_status = "Safety stop: external force/torque threshold exceeded";
+        }
+        else {
+          safety_status = "Safety stop: Franka reported control error";
+        }
+      }
+
+      if (hard_stop) {
+        v_c = 0;
+        v_c_filtered = 0;
+        send_velocities = false;
+      }
+
       const bool arm_moving_commanded = send_velocities && (command_norm(v_c) > kArmMovingCommandThreshold);
       update_arm_moving_state(arm_moving_commanded, last_arm_moving_state);
 
       // Send to the robot
       robot.setVelocity(vpRobot::CAMERA_FRAME, v_c);
 
-      {
-        std::stringstream ss;
-        ss << "Loop time: " << vpTime::measureTimeMs() - t_start << " ms";
-        vpDisplay::displayText(I, static_cast<int>(I.getHeight()) - overlay_bottom, overlay_left, ss.str(), vpColor::red);
+      const int status_band_top = static_cast<int>(I.getHeight());
+      const int status_text_left = ui_margin + ui_recovery_button_width + ui_button_gap;
+      const int status_row_1 = status_band_top + ui_status_row_padding;
+      const int status_row_2 = status_row_1 + ui_status_line_gap;
+      const int status_row_3 = status_row_2 + ui_status_line_gap;
+
+      vpDisplay::displayRectangle(Iui, status_band_top, 0, Iui.getWidth(), ui_bottom_band_height, ui_footer_bg, true);
+      vpDisplay::displayLine(Iui, status_band_top, 0, status_band_top, static_cast<int>(Iui.getWidth()) - 1,
+                             ui_footer_separator, ui_bottom_band_border);
+
+      vpRect plus_button = get_plus_button_rect(Iui);
+      vpRect minus_button = get_minus_button_rect(Iui);
+      vpRect recovery_button = get_recovery_button_rect(Iui);
+      vpDisplay::displayRectangle(Iui, plus_button, ui_button_action, false, ui_button_border);
+      vpDisplay::displayRectangle(Iui, minus_button, ui_button_action, false, ui_button_border);
+      vpDisplay::displayRectangle(Iui, recovery_button, ui_button_recovery, false, ui_button_border);
+      vpDisplay::displayText(Iui, static_cast<int>(plus_button.getTop()) + ui_text_baseline_offset,
+                             static_cast<int>(plus_button.getLeft()) + 14, "ZOOM OUT", ui_text_primary);
+      vpDisplay::displayText(Iui, static_cast<int>(minus_button.getTop()) + ui_text_baseline_offset,
+                             static_cast<int>(minus_button.getLeft()) + 18, "ZOOM IN", ui_text_primary);
+      vpDisplay::displayText(Iui, static_cast<int>(recovery_button.getTop()) + ui_text_baseline_offset,
+                             static_cast<int>(recovery_button.getLeft()) + 18, "HOME", ui_text_primary);
+
+      if (!status_line_1.empty()) {
+        vpDisplay::displayText(Iui, status_row_1, status_text_left, status_line_1, ui_text_primary);
       }
-      vpDisplay::flush(I);
+      if (!status_line_2.empty()) {
+        vpDisplay::displayText(Iui, status_row_2, status_text_left, status_line_2, ui_text_secondary);
+      }
+      if (!safety_status.empty()) {
+        vpColor safety_color = ui_warning;
+        if (workspace_hold || proximity_hold || joint_margin_hold) {
+          safety_color = ui_warning;
+        }
+        if (collision_detected || contact_detected || force_threshold_exceeded || robot_error) {
+          safety_color = ui_danger;
+        }
+        vpDisplay::displayText(Iui, status_row_3, status_text_left, safety_status, safety_color);
+      }
+      else if (!operator_status.empty()) {
+        vpDisplay::displayText(Iui, status_row_3, status_text_left, operator_status, operator_status_color);
+      }
+      else if (!status_line_3.empty()) {
+        vpDisplay::displayText(Iui, status_row_3, status_text_left, status_line_3, status_line_3_color);
+      }
+      vpDisplay::flush(Iui);
 
       std::string key;
-      if (vpDisplay::getKeyboardEvent(I, key, false)) {
+      if (vpDisplay::getKeyboardEvent(Iui, key, false)) {
         bool desired_factor_changed = false;
         if (key == "+" || key == "=") {
           opt_desired_factor = std::min(desired_factor_max, opt_desired_factor + desired_factor_step);
@@ -859,6 +1054,9 @@ int main(int argc, char **argv)
         else if (key == "-" || key == "_") {
           opt_desired_factor = std::max(desired_factor_min, opt_desired_factor - desired_factor_step);
           desired_factor_changed = true;
+        }
+        else if (key == "r" || key == "R") {
+          move_to_recovery_pose();
         }
 
         if (desired_factor_changed) {
@@ -872,9 +1070,10 @@ int main(int argc, char **argv)
 
       vpImagePoint click_ip;
       vpMouseButton::vpMouseButtonType button;
-      if (vpDisplay::getClick(I, click_ip, button, false)) {
-        vpRect plus_button = get_plus_button_rect(I);
-        vpRect minus_button = get_minus_button_rect(I);
+      if (vpDisplay::getClick(Iui, click_ip, button, false)) {
+        vpRect plus_button = get_plus_button_rect(Iui);
+        vpRect minus_button = get_minus_button_rect(Iui);
+        vpRect recovery_button = get_recovery_button_rect(Iui);
 
         switch (button) {
         case vpMouseButton::button1:
@@ -886,8 +1085,14 @@ int main(int argc, char **argv)
             adjust_desired_factor(-desired_factor_step);
             update_desired_pose();
           }
+          else if (click_ip.inRectangle(recovery_button)) {
+            move_to_recovery_pose();
+          }
           else {
             send_velocities = !send_velocities;
+            if (send_velocities) {
+              operator_status.clear();
+            }
           }
           break;
 
@@ -907,16 +1112,22 @@ int main(int argc, char **argv)
     if (!final_quit) {
       while (!final_quit) {
         rs.acquire(I);
-        vpDisplay::display(I);
+        for (unsigned int r = 0; r < I.getHeight(); ++r) {
+          std::memcpy(Iui[r], I[r], I.getWidth() * sizeof(unsigned char));
+        }
+        for (unsigned int r = I.getHeight(); r < Iui.getHeight(); ++r) {
+          std::memset(Iui[r], 0, Iui.getWidth() * sizeof(unsigned char));
+        }
+        vpDisplay::display(Iui);
 
-        vpDisplay::displayText(I, 20, 20, "Click to quit the program.", vpColor::red);
-        vpDisplay::displayText(I, 40, 20, "Visual servo converged.", vpColor::red);
+        vpDisplay::displayText(Iui, 20, 20, "Click to quit the program.", ui_text_primary);
+        vpDisplay::displayText(Iui, 44, 20, "Visual servo converged.", ui_text_secondary);
 
-        if (vpDisplay::getClick(I, false)) {
+        if (vpDisplay::getClick(Iui, false)) {
           final_quit = true;
         }
 
-        vpDisplay::flush(I);
+        vpDisplay::flush(Iui);
       }
     }
   }

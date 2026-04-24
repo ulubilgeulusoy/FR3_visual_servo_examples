@@ -54,6 +54,7 @@ How to use the app while it is running:
 - Keep the target AprilTag visible in the camera window.
 - Use `+` and `-` on the keyboard to increase or decrease `desired-factor` live.
 - On a touchscreen or with a mouse, press the on-screen `+` and `-` buttons in the lower-right corner.
+- Use `r` on the keyboard or press the on-screen `HOME` button in the lower-left corner to move the robot to the configured recovery pose.
 - Watch for lost-target behavior: if the tag disappears, the robot briefly backs off and biases its search using the last observed image motion.
 - Stop the run immediately if detection is unstable, calibration looks wrong, or the robot motion does not match the camera image.
 
@@ -104,6 +105,11 @@ double scan_backoff_secs = 3.5;
 - **Servo speed caps**: Translational and rotational camera-frame velocities are clamped (`servo_max_linear`, `servo_max_angular`) to keep approach slow.
 - **Orientation guard**: If the current-to-desired tag orientation error exceeds ±45°, commanded velocities are zeroed until the error returns below the threshold (`orientation_stop_thresh`).
 - **Velocity smoothing**: A first-order low-pass filter (`vel_smooth_alpha`) blends new commands with the previous ones to reduce twitchiness while keeping the caps/guard in place.
+- **Soft joint-limit guard**: The app reads current FR3 joint angles and blocks motion when any joint gets within a configured soft margin of the robot's ViSP-reported joint limits.
+- **Workspace guard**: The app reads the live camera pose in the robot base frame and stops if that pose leaves a configured Cartesian workspace box.
+- **Proximity stop**: While the tag is tracked, the app stops if the estimated camera-to-tag distance drops below a configured minimum threshold.
+- **Contact / collision / wrench guard**: The app monitors Franka-reported contact, collision, control-error, and external wrench estimates and disables commanded motion when any of them trips.
+- **Manual recovery pose**: The operator can command a predefined joint-space recovery pose from the GUI (`HOME`) or keyboard (`r`) after a safety stop or whenever a neutral pose is needed.
 
 Tune these in `src/servoFrankaIBVS_combined.cpp` as needed for your setup.
 
