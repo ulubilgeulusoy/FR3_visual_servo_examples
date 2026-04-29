@@ -110,7 +110,7 @@ private:
   double servo_max_angular_ = vpMath::rad(8);
   double orientation_stop_thresh_ = vpMath::rad(45);
   double vel_smooth_alpha_ = 0.3;
-  double joint_limit_margin_ = vpMath::rad(10);
+  double joint_limit_margin_ = vpMath::rad(15);
   double workspace_x_min_ = 0.20;
   double workspace_x_max_ = 0.65;
   double workspace_y_min_ = -0.55;

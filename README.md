@@ -144,7 +144,7 @@ Implemented controller-side safeguards:
 - orientation guard at `±45 deg`
 - low-pass smoothing of commanded velocity
 - soft joint-limit margin guard:
-  stops motion when any of the 7 joints comes within `10 deg` of the robot-reported joint minimum or maximum
+  stops motion when any of the 7 joints comes within `15 deg` of the robot-reported joint minimum or maximum
 - base-frame workspace guard:
   stops motion when the camera position leaves the configured base-frame workspace box
   current camera-position bounds are:
