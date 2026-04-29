@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <sstream>
 
 #include <visp3/core/vpIoTools.h>
@@ -18,6 +19,7 @@
 
 namespace {
 constexpr double kArmMovingCommandThreshold = 1e-3;
+constexpr unsigned int kFrankaJointCount = 7;
 
 QColor toQColor(const vpColor &color)
 {
@@ -138,11 +140,11 @@ bool VisualServoController::initialize(QString &error_message)
     target_phase_start_ms_ = vpTime::measureTimeMs();
     t_init_servo_ = target_phase_start_ms_;
 
+    initialized_ = true;
     updateDesiredPose();
     refreshStatusLines(-1);
     renderFrame(nullptr);
 
-    initialized_ = true;
     return true;
   }
   catch (const std::exception &e) {
@@ -441,8 +443,72 @@ void VisualServoController::refreshStatusLines(int target_tag_id)
                      .arg(opt_desired_factor_, 0, 'f', 1);
   status_line_3_.clear();
   status_line_3_color_ = QColor(Qt::white);
+  updateJointLimitStatus();
   if (opt_mode_ == 2 && target_tag_id >= 0) {
     appendStatusLine3(QString("Targeting Apriltag id %1 (36h11)").arg(target_tag_id), QColor(Qt::white));
+  }
+}
+
+double VisualServoController::jointLimitMarginRad(unsigned int joint_index, bool near_min) const
+{
+  if (joint_index == 3) {
+    return near_min ? j4_min_joint_limit_margin_ : j4_max_joint_limit_margin_;
+  }
+  if (joint_index == 5 && near_min) {
+    return j6_min_joint_limit_margin_;
+  }
+  return joint_limit_margin_;
+}
+
+void VisualServoController::updateJointLimitStatus()
+{
+  status_line_4_ = "Joint margin monitor unavailable";
+  status_line_4_color_ = QColor(Qt::white);
+
+  if (!initialized_) {
+    return;
+  }
+
+  vpColVector q;
+  robot_.getPosition(vpRobot::JOINT_STATE, q);
+  const unsigned int joint_count = std::min<unsigned int>(kFrankaJointCount, q.size());
+  if (joint_count == 0) {
+    return;
+  }
+
+  unsigned int critical_joint = 0;
+  bool near_min = true;
+  double min_distance_rad = std::numeric_limits<double>::infinity();
+  double critical_threshold_rad = joint_limit_margin_;
+  for (unsigned int i = 0; i < joint_count; ++i) {
+    const double dist_to_min = q[i] - joint_min_[i];
+    const double dist_to_max = joint_max_[i] - q[i];
+    const bool this_near_min = dist_to_min <= dist_to_max;
+    const double closest_dist = this_near_min ? dist_to_min : dist_to_max;
+    if (closest_dist < min_distance_rad) {
+      min_distance_rad = closest_dist;
+      critical_joint = i;
+      near_min = this_near_min;
+      critical_threshold_rad = jointLimitMarginRad(i, this_near_min);
+    }
+  }
+
+  const double min_distance_deg = vpMath::deg(min_distance_rad);
+  const double configured_margin_deg = vpMath::deg(critical_threshold_rad);
+  status_line_4_ = QString("Critical joint: J%1 near %2   remaining margin: %3 deg   guard threshold: %4 deg")
+                     .arg(critical_joint + 1)
+                     .arg(near_min ? "min" : "max")
+                     .arg(min_distance_deg, 0, 'f', 1)
+                     .arg(configured_margin_deg, 0, 'f', 1);
+
+  if (min_distance_rad <= critical_threshold_rad) {
+    status_line_4_color_ = QColor(255, 0, 0);
+  }
+  else if (min_distance_rad <= critical_threshold_rad + vpMath::rad(10.0)) {
+    status_line_4_color_ = QColor(255, 165, 0);
+  }
+  else {
+    status_line_4_color_ = QColor(Qt::white);
   }
 }
 
@@ -530,11 +596,22 @@ void VisualServoController::applySafetySupervisor(vpColVector &v_c, bool tag_ok,
 
   vpColVector q;
   robot_.getPosition(vpRobot::JOINT_STATE, q);
-  for (unsigned int i = 0; i < std::min<unsigned int>(7, q.size()); ++i) {
-    if ((q[i] - joint_min_[i]) < joint_limit_margin_ || (joint_max_[i] - q[i]) < joint_limit_margin_) {
+  for (unsigned int i = 0; i < std::min<unsigned int>(kFrankaJointCount, q.size()); ++i) {
+    const double dist_to_min = q[i] - joint_min_[i];
+    const double dist_to_max = joint_max_[i] - q[i];
+    const bool near_min = dist_to_min <= dist_to_max;
+    const double closest_dist = near_min ? dist_to_min : dist_to_max;
+    const double applicable_margin = jointLimitMarginRad(i, near_min);
+    if (closest_dist < applicable_margin) {
       joint_margin_hold = true;
       hard_stop = true;
-      appendStatusLine3("Safety stop: joint-limit margin reached", QColor(255, 165, 0));
+      const double remaining_margin_deg = vpMath::deg(closest_dist);
+      appendStatusLine3(QString("Safety stop: J%1 near %2 limit (%3 deg remaining, threshold %4 deg)")
+                          .arg(i + 1)
+                          .arg(near_min ? "min" : "max")
+                          .arg(remaining_margin_deg, 0, 'f', 1)
+                          .arg(vpMath::deg(applicable_margin), 0, 'f', 1),
+                        QColor(255, 165, 0));
       break;
     }
   }

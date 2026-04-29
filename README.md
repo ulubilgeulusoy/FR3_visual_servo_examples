@@ -106,12 +106,13 @@ Controls:
 Status area:
 - line 1: control hints
 - line 2: target distance and current level
-- line 3: live operator or safety message
+- line 3: live operator or safety/event message
 
 Important behavior:
 - the app starts with motion disabled
 - motion is controlled through the `START` / `STOP` button, not by clicking the image
 - the native window close button is intentionally not the primary control path; use the in-app `QUIT` button
+- the GUI does not currently show the backend real-time critical-joint monitor; that logic remains in the controller for troubleshooting and future debugging work
 
 ## Typical Operating Flow
 
@@ -145,6 +146,17 @@ Implemented controller-side safeguards:
 - low-pass smoothing of commanded velocity
 - soft joint-limit margin guard:
   stops motion when any of the 7 joints comes within `15 deg` of the robot-reported joint minimum or maximum
+  joint numbering runs from the base outward to the tool:
+  `J1` is the base-side joint
+  `J7` is the gripper/tool-side joint
+  `J4` is the 4th joint from the base, roughly mid-arm
+  `J6` is the 6th joint from the base, near the wrist side
+  special case for `J4`:
+  `J4 min` uses a `15 deg` margin
+  `J4 max` uses a `50 deg` margin
+  special case for `J6`:
+  `J6 min` uses a `70 deg` margin
+  the controller also keeps an internal real-time critical-joint calculation for debugging, even though that live joint status is not currently displayed in the GUI
 - base-frame workspace guard:
   stops motion when the camera position leaves the configured base-frame workspace box
   current camera-position bounds are:

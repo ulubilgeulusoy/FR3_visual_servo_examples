@@ -5,9 +5,11 @@
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLayout>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QSizePolicy>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -35,7 +37,8 @@ MainWindow::MainWindow(VisualServoController *controller, QWidget *parent)
 
   image_label_ = new QLabel(this);
   image_label_->setAlignment(Qt::AlignCenter);
-  image_label_->setMinimumSize(640, 480);
+  image_label_->setMinimumSize(420, 300);
+  image_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   image_label_->setStyleSheet("QLabel { background: black; border: 1px solid #1f3a5f; }");
   root_layout->addWidget(image_label_, 1);
 
@@ -48,12 +51,19 @@ MainWindow::MainWindow(VisualServoController *controller, QWidget *parent)
   status_line_1_label_ = new QLabel(this);
   status_line_2_label_ = new QLabel(this);
   status_line_3_label_ = new QLabel(this);
+  status_line_1_label_->setWordWrap(true);
+  status_line_2_label_->setWordWrap(true);
+  status_line_3_label_->setWordWrap(true);
+  status_line_1_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
+  status_line_2_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
+  status_line_3_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
   status_line_1_label_->setStyleSheet("QLabel { color: white; font: 600 16px 'DejaVu Sans Mono'; }");
   status_line_2_label_->setStyleSheet("QLabel { color: #ffd54a; font: 600 16px 'DejaVu Sans Mono'; }");
   status_line_3_label_->setStyleSheet("QLabel { color: white; font: 600 16px 'DejaVu Sans Mono'; }");
   status_layout->addWidget(status_line_1_label_);
   status_layout->addWidget(status_line_2_label_);
   status_layout->addWidget(status_line_3_label_);
+  status_layout->setSizeConstraint(QLayout::SetMinimumSize);
 
   auto *controls_layout = new QHBoxLayout();
   controls_layout->setSpacing(12);

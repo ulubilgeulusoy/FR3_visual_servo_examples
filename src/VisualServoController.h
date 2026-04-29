@@ -59,6 +59,8 @@ public:
   QString statusLine2() const { return status_line_2_; }
   QString statusLine3() const { return status_line_3_; }
   QColor statusLine3Color() const { return status_line_3_color_; }
+  QString statusLine4() const { return status_line_4_; }
+  QColor statusLine4Color() const { return status_line_4_color_; }
   QString operatorStatus() const { return operator_status_; }
   QColor operatorStatusColor() const { return operator_status_color_; }
 
@@ -69,9 +71,11 @@ public:
 private:
   void updateDesiredPose();
   void refreshStatusLines(int target_tag_id);
+  void updateJointLimitStatus();
   void updateTrajectory(const std::vector<vpImagePoint> &corners, double now_ms);
   void renderFrame(const std::vector<vpImagePoint> *corners);
   void appendStatusLine3(const QString &text, const QColor &color);
+  double jointLimitMarginRad(unsigned int joint_index, bool near_min) const;
   void applySafetySupervisor(vpColVector &v_c, bool tag_ok, const vpHomogeneousMatrix &c_M_o,
                              bool &contact_detected, bool &collision_detected,
                              bool &force_threshold_exceeded, bool &robot_error);
@@ -111,6 +115,9 @@ private:
   double orientation_stop_thresh_ = vpMath::rad(45);
   double vel_smooth_alpha_ = 0.3;
   double joint_limit_margin_ = vpMath::rad(15);
+  double j4_min_joint_limit_margin_ = vpMath::rad(15);
+  double j4_max_joint_limit_margin_ = vpMath::rad(50);
+  double j6_min_joint_limit_margin_ = vpMath::rad(70);
   double workspace_x_min_ = 0.20;
   double workspace_x_max_ = 0.65;
   double workspace_y_min_ = -0.55;
@@ -148,6 +155,8 @@ private:
   QString status_line_2_;
   QString status_line_3_;
   QColor status_line_3_color_ = QColor(Qt::white);
+  QString status_line_4_;
+  QColor status_line_4_color_ = QColor(Qt::white);
   QString operator_status_;
   QColor operator_status_color_ = QColor(Qt::white);
 
