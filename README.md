@@ -143,10 +143,22 @@ Implemented controller-side safeguards:
 - servo translational and rotational speed caps
 - orientation guard at `±45 deg`
 - low-pass smoothing of commanded velocity
-- soft joint-limit margin guard
-- base-frame workspace guard
+- soft joint-limit margin guard:
+  stops motion when any of the 7 joints comes within `10 deg` of the robot-reported joint minimum or maximum
+- base-frame workspace guard:
+  stops motion when the camera position leaves the configured base-frame workspace box
+  current camera-position bounds are:
+  `x = 0.20 m` to `0.65 m`
+  `y = -0.55 m` to `0.55 m`
+  `z = 0.10 m` to `0.85 m`
+  interpreted in the robot base frame, this means:
+  the camera must stay between `20 cm` and `65 cm` forward from the base-frame origin
+  the camera must stay within `55 cm` to either side of the base centerline
+  the camera must stay between `10 cm` and `85 cm` in height above the base-frame origin
 - minimum camera-to-tag distance stop
-- Franka contact, collision, external wrench, and control-error stop
+- Franka contact, collision, external wrench, and control-error stop:
+  stops motion if Franka reports joint/cartesian contact, joint/cartesian collision, excessive external wrench, or a robot control error
+  current external wrench thresholds are `20 N` for force magnitude and `6 Nm` for torque magnitude
 - manual recovery pose
 - explicit motion enable through the GUI
 

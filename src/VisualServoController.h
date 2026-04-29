@@ -112,7 +112,7 @@ private:
   double vel_smooth_alpha_ = 0.3;
   double joint_limit_margin_ = vpMath::rad(10);
   double workspace_x_min_ = 0.20;
-  double workspace_x_max_ = 0.75;
+  double workspace_x_max_ = 0.65;
   double workspace_y_min_ = -0.55;
   double workspace_y_max_ = 0.55;
   double workspace_z_min_ = 0.10;
