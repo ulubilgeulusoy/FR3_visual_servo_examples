@@ -161,6 +161,5 @@ FR3_visual_servo_examples/
 ## Notes
 
 - Default AprilTag family is `36h11`.
-- The robot must be in velocity control mode before use.
-- If no tag is detected, the app performs recovery behavior instead of normal servoing.
-- Visual-servo `arm_moving` state is derived from commanded ViSP camera-frame velocity, not external ROS joint-state inference.
+- The robot must be in velocity control mode before use.`r`n- If no tag is detected, the app performs recovery behavior instead of normal servoing.`r`n- Visual-servo `arm_moving` state is derived from commanded ViSP camera-frame velocity, not external ROS joint-state inference.`r`n`r`n## License`r`n`r`nThis repository is licensed under **GPL-2.0-or-later**.`r`n`r`nReason: the project links against ViSP (Visual Servoing Platform), and this repository includes/adapts ViSP example-derived code with preserved upstream GPL notices. To keep licensing consistent with that linkage and provenance, the repository is distributed under GNU GPL v2 or any later version.`r`n`r`nSee [LICENSE](LICENSE) for the full license text and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency notices.`r`n
+
