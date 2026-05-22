@@ -212,3 +212,11 @@ Notes on source layout:
 - The robot must be reachable and able to enter velocity control before use.
 - If no tag is detected, the app performs recovery behavior rather than normal servoing.
 - The current default desired level is `8`.
+
+## License
+
+This repository is licensed under **GPL-2.0-or-later**.
+
+Reason: the project links against ViSP (Visual Servoing Platform), and this repository includes/adapts ViSP example-derived code with preserved upstream GPL notices. To keep licensing consistent with that linkage and provenance, the repository is distributed under GNU GPL v2 or any later version.
+
+See [LICENSE](LICENSE) for the full license text and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency notices.
