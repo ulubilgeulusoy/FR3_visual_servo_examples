@@ -6,11 +6,11 @@ This version of the project builds a Qt-based `servoFrankaIBVS_combined` applica
 
 ## Branch Matrix
 
-| Branch | Status | UI Stack | ViSP | Qt5 | libfranka | RealSense2 | Build System | License | Layout |
-|---|---|---|---|---|---|---|---|---|---|
-| `main` | ![branch](https://img.shields.io/badge/branch-main-blue) | ![ui](https://img.shields.io/badge/UI-Qt5_GUI-0F7AC6) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-required-success) | ![libfranka](https://img.shields.io/badge/libfranka-used-success) | ![realsense](https://img.shields.io/badge/RealSense2-used-success) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![license](https://img.shields.io/badge/license-GPL--2.0--or--later-blue) | ![layout](https://img.shields.io/badge/layout-modular_controller-6A5ACD) |
-| `new_GUI_test` | ![branch](https://img.shields.io/badge/branch-new__GUI__test-blue) | ![ui](https://img.shields.io/badge/UI-Qt5_GUI-0F7AC6) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-required-success) | ![libfranka](https://img.shields.io/badge/libfranka-used-success) | ![realsense](https://img.shields.io/badge/RealSense2-used-success) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![license](https://img.shields.io/badge/license-GPL--2.0--or--later-blue) | ![layout](https://img.shields.io/badge/layout-modular_controller-6A5ACD) |
-| `visp_gui_combined` | ![branch](https://img.shields.io/badge/branch-visp__gui__combined-blue) | ![ui](https://img.shields.io/badge/UI-ViSP_GUI%20(single--file)-2E8B57) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-not_required-lightgrey) | ![libfranka](https://img.shields.io/badge/libfranka-used-success) | ![realsense](https://img.shields.io/badge/RealSense2-used-success) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![license](https://img.shields.io/badge/license-GPL--2.0--or--later-blue) | ![layout](https://img.shields.io/badge/layout-monolithic_example-556B2F) |
+| Branch | UI Stack | ViSP | Qt5 | Build System | Layout |
+|---|---|---|---|---|---|
+| `main` | ![ui](https://img.shields.io/badge/UI-Qt5_GUI-0F7AC6) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-required-success) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![layout](https://img.shields.io/badge/layout-modular_controller-6A5ACD) |
+| `new_GUI_test` | ![ui](https://img.shields.io/badge/UI-Qt5_GUI-0F7AC6) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-required-success) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![layout](https://img.shields.io/badge/layout-modular_controller-6A5ACD) |
+| `visp_gui_combined` | ![ui](https://img.shields.io/badge/UI-ViSP_GUI%20(single--file)-2E8B57) | ![visp](https://img.shields.io/badge/ViSP-required-success) | ![qt5](https://img.shields.io/badge/Qt5-not_required-lightgrey) | ![cmake](https://img.shields.io/badge/CMake-%3E%3D3.10-informational) | ![layout](https://img.shields.io/badge/layout-monolithic_example-556B2F) |
 
 ## What It Does
 
